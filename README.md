@@ -1,63 +1,87 @@
 # Astralmarket
 
-Astralmarket is a Bags.fm market-intelligence product for tracking new token launches, live DBC pools, migrated DAMM v2 markets, and token-level market movement.
+Astralmarket is a market-intelligence product for the Bags.fm ecosystem.
 
-The product combines Bags launch data with market enrichment from DexScreener, Solana RPC supply lookups, and cached historical snapshots. The web experience presents a CoinGecko-style market dashboard and token detail pages built specifically around Bags-native activity.
+It turns Bags launch, pool, and migration activity into a familiar market dashboard: ranked tokens, price movement, market capitalization, 7-day chart context, creator metadata, and token-level intelligence built around Bags-native mechanics.
 
-## Product Overview
+## Why This Exists
 
-Astralmarket is designed for users who want to evaluate Bags token activity without manually checking launch feeds, pool state, and market data across separate sources.
+Bags has a fast-moving launch environment. New tokens appear, pools become active, and some markets migrate, but the information needed to evaluate those moves is scattered across launch feeds, pool state, token metadata, market pairs, and raw price data.
 
-Core product surfaces:
+Astralmarket brings those signals into one place.
 
-- Market leaderboard with rank, price, 1h/24h/7d movement, volume, market cap, and 7-day sparkline history.
-- Bags launch and pool state visibility across fresh launches, live DBC pools, and migrated DAMM v2 pools.
-- Token detail pages with market charting, pool metadata, route/source data, creator information, and derived Bags market signals.
-- Latest Bags signals and optional crypto news enrichment for market context.
-- Cache-first backend API designed to keep the web app fast while scheduled sync jobs refresh market data.
+The goal is simple: make Bags markets legible.
 
-## Architecture
+## What The Product Does
 
-This repository is a pnpm/Turbo monorepo.
+Astralmarket provides:
+
+- A Bags-focused market dashboard with ranked token rows.
+- Price, 1h, 24h, and 7d movement for cached market data.
+- 24h volume, market capitalization, and token imagery from market enrichment.
+- 7-day sparkline history built from backend market snapshots.
+- Token detail pages with larger market charts, source data, pool status, and creator context.
+- Separation between Bags launch signals and broader crypto news context.
+- Backend sync coverage reporting so market data freshness can be evaluated.
+
+This is not a generic crypto table with a Bags label added on top. The product model is built around Bags-specific states: fresh launches, live DBC pools, and migrated DAMM v2 markets.
+
+## Product Experience
+
+The web app is designed to feel familiar to anyone who has used market discovery products like CoinGecko or DexScreener, while still making Bags-specific context visible.
+
+Key screens:
+
+- **Market leaderboard**: scan token rank, price, movement, volume, market cap, and recent trend in one row.
+- **Highlights**: quickly identify trending Bags tokens and top gainers.
+- **Latest signals**: separate launch-feed activity from broader market news.
+- **Coin detail**: inspect token price history, pool data, route/source details, creator info, and derived Bags market signal.
+
+The interface is intentionally dense and operational rather than promotional. The target user is trying to compare markets, not read marketing copy.
+
+## Technical Approach
+
+Astralmarket is a pnpm/Turbo monorepo with a separated web and backend architecture:
 
 ```text
-apps/web       Next.js app deployed on Vercel
-apps/backend   Fastify API deployed on a VPS/Droplet
-apps/docs      Non-product starter docs app
-packages/*     Shared UI, ESLint, and TypeScript configuration
+apps/web       Next.js web app
+apps/backend   Fastify API and sync worker
+packages/*     Shared UI and repo configuration
 ```
 
-Runtime flow:
+Runtime architecture:
 
 ```text
-User
-  -> Vercel web app
-    -> cached server-side fetches
-      -> Fastify backend
-        -> Postgres/Supabase
-        -> Bags API
-        -> DexScreener
-        -> Solana RPC
-        -> optional FMP crypto news
+Web app
+  -> cached server-side market fetches
+    -> Fastify API
+      -> Postgres/Supabase cache
+      -> Bags API
+      -> DexScreener
+      -> Solana RPC
+      -> optional FMP crypto news
 ```
 
-The backend stores synchronized token, pool, creator, market snapshot, news, and sync-run data in Postgres through Prisma.
+The backend is cache-first. It synchronizes market state into Postgres, then serves fast read endpoints to the web app. Live external API calls are used as fallback paths, not as the primary request path for every user visit.
 
-## Backend Capabilities
+## Data Pipeline
 
-The Fastify backend provides:
+The backend sync process:
 
-- Scheduled Bags market sync jobs.
-- Manual admin sync trigger.
-- Cache-first market leaderboard responses.
-- Token detail lookup by mint, symbol, or name slug.
-- DexScreener price, market-cap, volume, liquidity, and image enrichment.
-- Solana RPC supply lookup for fallback market-cap calculations.
-- Derived price-change fallback from historical snapshots.
-- 7-day market-history sampling for table sparklines and coin detail charts.
-- Optional FMP crypto news ingestion with daily request limiting.
+1. Reads Bags token launch feed and pool data.
+2. Classifies tokens by Bags market state.
+3. Enriches tokens with DexScreener price, volume, liquidity, market-cap, and image data.
+4. Uses Solana RPC supply data for fallback market-cap calculations.
+5. Writes market snapshots for historical charts and 7-day movement.
+6. Derives missing price-change windows when external market data is incomplete.
+7. Stores Bags launch signals and optional market news separately.
+8. Reports sync coverage, including tokens scanned, market data hits, prices found, market caps found, and derived changes.
 
-Primary API routes:
+This gives evaluators a clear way to judge both the product surface and the reliability of the underlying market data.
+
+## API Surface
+
+Primary backend routes:
 
 ```text
 GET  /health
@@ -67,197 +91,72 @@ GET  /v1/bags/coins/:identifier
 POST /v1/admin/sync/bags
 ```
 
-API responses use a common envelope:
+The public market endpoints are intentionally simple and stable. The admin sync endpoint is protected by a secret header in production.
 
-```json
-{
-  "success": true,
-  "response": {}
-}
-```
+## What Makes It Different
 
-## Web Capabilities
+Astralmarket is built around Bags market structure instead of generic token listings.
 
-The Next.js web app provides:
+Differentiators:
 
-- Market dashboard with global Bags stats.
-- Paginated token leaderboard.
-- Rich SVG sparklines based on cached price history.
-- Trending and top-gainer highlight panels.
-- Latest Bags signal rail and crypto news gallery.
-- Coin detail pages with a 7-day market chart, price snapshot count, pool data, source data, and creator context.
-- Vercel server-side fetch caching for public market endpoints.
+- Bags-native pool state: fresh launch, live DBC, migrated DAMM v2.
+- Cached historical snapshots instead of one-off live reads.
+- Coin detail pages that expose pool/source context, not only price.
+- Derived market signals that account for Bags launch status and pool state.
+- Separate treatment of Bags launch-feed signals and external market news.
+- Vercel-side fetch caching for public web reads, reducing pressure on the backend.
+- Backend sync coverage metrics for visibility into data quality.
 
-Configured cache windows:
+## Evaluation Focus
 
-```text
-/v1/bags/market              30 seconds
-/v1/bags/category            300 seconds
-/v1/bags/coins/:identifier   60 seconds
-```
+When reviewing the product, the strongest areas to inspect are:
 
-## Environment
+- Whether the homepage makes Bags market movement scannable.
+- Whether token rows provide enough context to compare opportunities quickly.
+- Whether the coin detail page explains why a token is relevant beyond price alone.
+- Whether the backend model can continue improving as more snapshots accumulate.
+- Whether the data pipeline gracefully handles incomplete third-party market data.
 
-Backend environment file:
+Astralmarket is strongest after scheduled syncs have been running long enough to collect chart history. A new deployment may show sparse charts until enough snapshots exist.
 
-```text
-apps/backend/.env
-```
+## Current Maturity
 
-Required backend values:
+Implemented:
 
-```env
-NODE_ENV="production"
-HOST="127.0.0.1"
-PORT="4000"
-DATABASE_URL="postgresql://..."
-DIRECT_URL="postgresql://..."
-BAGS_API_KEY="..."
-ADMIN_SYNC_SECRET="..."
-BAGS_SYNC_ENABLED="true"
-BAGS_SYNC_INTERVAL_MINUTES="30"
-BAGS_SYNC_ON_START="true"
-SOLANA_RPC_URL="https://api.mainnet-beta.solana.com"
-```
+- Bags market sync and cache.
+- DexScreener market enrichment.
+- Solana RPC supply enrichment.
+- Historical snapshots for market rows and coin charts.
+- Market leaderboard and pagination.
+- Coin detail pages.
+- Bags signal and crypto news display paths.
+- Vercel server-side caching for public market reads.
+- Production-ready backend deployment shape behind a reverse proxy.
 
-Optional backend values:
+Still intentionally limited:
 
-```env
-NEWS_API_KEY=""
-FMP_NEWS_DAILY_REQUEST_LIMIT="200"
-```
+- Search and watchlist controls are present as disabled affordances.
+- More timeframes beyond the 7-day chart window are not active yet.
+- Chart richness depends on accumulated sync history.
+- News enrichment is optional and depends on API credentials.
 
-Web environment value:
+These constraints are explicit rather than hidden. The current product focuses on proving the market-intelligence loop first: sync, enrich, cache, rank, chart, and explain.
 
-```env
-ASTRALMARKET_API_BASE_URL="https://api.astralmarket.xyz"
-```
+## Repository Notes
 
-This value is server-side only in the Next.js app. It does not need a `NEXT_PUBLIC_` prefix.
-
-## Local Development
-
-Install dependencies:
-
-```sh
-pnpm install
-```
-
-Create backend env:
-
-```sh
-cp apps/backend/.env.example apps/backend/.env
-```
-
-Run backend and web together:
-
-```sh
-pnpm dev:apps
-```
-
-Default local services:
+The repository is organized for continued product development:
 
 ```text
-Web:         http://localhost:3000
-Backend API: http://127.0.0.1:4000
+apps/web       user-facing market interface
+apps/backend   API, sync jobs, Prisma models, data enrichment
+apps/docs      placeholder documentation app
+packages/ui    shared component package
 ```
 
-Run individual apps:
+Quality checks currently include TypeScript validation, linting, and backend ranking tests.
 
-```sh
-pnpm --filter web dev
-pnpm --filter backend dev
-```
+## Product Thesis
 
-## Database
+Bags needs market intelligence that understands Bags.
 
-Prisma schema and migrations live in:
-
-```text
-apps/backend/prisma
-```
-
-Generate Prisma client:
-
-```sh
-pnpm --filter backend exec prisma generate
-```
-
-Apply migrations:
-
-```sh
-pnpm --filter backend exec prisma migrate deploy
-```
-
-## Data Sync
-
-Run a manual sync script:
-
-```sh
-pnpm --filter backend sync:bags
-```
-
-Trigger sync through the admin API:
-
-```sh
-curl -X POST https://api.astralmarket.xyz/v1/admin/sync/bags \
-  -H "x-admin-sync-secret: <ADMIN_SYNC_SECRET>"
-```
-
-`ADMIN_SYNC_SECRET` should always be set in production.
-
-## Deployment Model
-
-Recommended production shape:
-
-```text
-Web:      Vercel
-Backend:  DigitalOcean Droplet, Singapore region if Supabase is in Asia
-Database: Supabase/Postgres
-Proxy:    Caddy -> Fastify on 127.0.0.1:4000
-Process:  systemd
-```
-
-The backend should run behind HTTPS at an API subdomain such as:
-
-```text
-https://api.astralmarket.xyz
-```
-
-Then Vercel should set:
-
-```env
-ASTRALMARKET_API_BASE_URL="https://api.astralmarket.xyz"
-```
-
-## Quality Checks
-
-Type-check all packages:
-
-```sh
-pnpm check-types
-```
-
-Lint all packages:
-
-```sh
-pnpm lint
-```
-
-Run backend ranking tests:
-
-```sh
-pnpm --filter backend test:ranking
-```
-
-Build all packages:
-
-```sh
-pnpm build
-```
-
-## Evaluation Notes
-
-Market graph richness depends on accumulated backend snapshots. With a 30-minute sync interval, a full 7-day chart window requires several days of scheduled sync history. Early deployments may show sparse charts until enough market snapshots are collected.
-
-The product is intentionally cache-first: public web pages can remain responsive while backend sync jobs refresh token, pool, price, and news data in the background.
+Astralmarket is the first layer of that: a dedicated discovery and analysis surface for Bags tokens, backed by a sync pipeline that turns launch and pool activity into readable market context.
