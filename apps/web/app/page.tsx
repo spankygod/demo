@@ -5,7 +5,6 @@ import {
   ChevronRight,
   ChevronLeft,
   Flame,
-  Gauge,
   Grid2X2,
   LayoutList,
   Maximize2,
@@ -975,10 +974,6 @@ export default async function Home({
       >
         <ArrowUp className="size-5" />
       </a>
-
-      <div className="fixed left-5 top-[665px] hidden size-10 place-items-center rounded-full border border-red-400/40 bg-red-400/10 text-white lg:grid">
-        <Gauge className="size-5" />
-      </div>
 
       <SiteFooter />
     </main>
