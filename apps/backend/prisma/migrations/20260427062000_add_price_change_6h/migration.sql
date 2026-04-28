@@ -1,0 +1,2 @@
+ALTER TABLE "TokenMarketSnapshot"
+ADD COLUMN IF NOT EXISTS "priceChange6h" DOUBLE PRECISION;

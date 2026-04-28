@@ -1,0 +1,40 @@
+{
+  "name": "backend",
+  "version": "1.0.0",
+  "description": "Astralmarket Fastify API.",
+  "main": "src/app.ts",
+  "scripts": {
+    "build": "pnpm run build:ts",
+    "build:ts": "pnpm run clean && tsc",
+    "check-types": "tsc --noEmit",
+    "clean": "node -e \"require('fs').rmSync('dist', { recursive: true, force: true })\"",
+    "dev": "pnpm run build:ts && concurrently -k -p \"[{name}]\" -n \"TypeScript,App\" -c \"yellow.bold,cyan.bold\" \"pnpm:watch:ts\" \"pnpm:dev:start\"",
+    "dev:start": "fastify start --ignore-watch=.ts$ -w -l info -P dist/src/app.js",
+    "sync:bags": "pnpm run build:ts && node dist/src/scripts/sync-bags.js",
+    "test:ranking": "pnpm run build:ts && node --test dist/src/lib/bags-leaderboards.test.js",
+    "start": "pnpm run build:ts && fastify start -l info dist/src/app.js",
+    "watch:ts": "tsc -w"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@fastify/autoload": "^6.3.1",
+    "@fastify/cors": "^11.2.0",
+    "@fastify/sensible": "^6.0.4",
+    "@prisma/client": "6.19.3",
+    "dotenv": "^17.4.2",
+    "fastify": "^5.8.5",
+    "fastify-cli": "^8.0.0",
+    "fastify-plugin": "^5.1.0",
+    "fastify-type-provider-zod": "^6.1.0",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.3",
+    "concurrently": "^9.2.1",
+    "fastify-tsconfig": "^3.0.0",
+    "prisma": "^6.19.3",
+    "typescript": "^5.9.2"
+  }
+}

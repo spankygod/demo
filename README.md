@@ -1,159 +1,148 @@
-# Turborepo starter
+# Astralmarket
 
-This Turborepo starter is maintained by the Turborepo core team.
+Astralmarket is a Bags.fm market-intelligence app. The web app renders Bags token leaderboards and coin detail pages, while the backend syncs Bags launch and pool data into Postgres and enriches it with DexScreener and Solana RPC market data.
 
-## Using this example
+## Workspace
 
-Run the following command:
+This repository is a pnpm/Turbo monorepo.
 
-```sh
-npx create-turbo@latest
-```
+- `apps/web` - Next.js frontend for the market leaderboard and coin pages.
+- `apps/backend` - Fastify API with Prisma/Postgres storage and Bags market sync jobs.
+- `apps/docs` - starter documentation app, currently not product-facing.
+- `packages/ui` - shared React component package.
+- `packages/eslint-config` and `packages/typescript-config` - shared repo configuration.
 
-## What's inside?
+## Requirements
 
-This Turborepo includes the following packages/apps:
+- Node.js 18 or newer
+- pnpm 9
+- PostgreSQL database, typically Supabase
+- Bags API key for live sync and fallback API reads
 
-### Apps and Packages
+## Setup
 
-- `docs`: a [Next.js](https://nextjs.org/) app
-- `web`: another [Next.js](https://nextjs.org/) app
-- `@repo/ui`: a stub React component library shared by both `web` and `docs` applications
-- `@repo/eslint-config`: `eslint` configurations (includes `eslint-config-next` and `eslint-config-prettier`)
-- `@repo/typescript-config`: `tsconfig.json`s used throughout the monorepo
-
-Each package/app is 100% [TypeScript](https://www.typescriptlang.org/).
-
-### Utilities
-
-This Turborepo has some additional tools already setup for you:
-
-- [TypeScript](https://www.typescriptlang.org/) for static type checking
-- [ESLint](https://eslint.org/) for code linting
-- [Prettier](https://prettier.io) for code formatting
-
-### Build
-
-To build all apps and packages, run the following command:
-
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed (recommended):
+Install dependencies from the repository root:
 
 ```sh
-cd my-turborepo
-turbo build
+pnpm install
 ```
 
-Without global `turbo`, use your package manager:
+Create backend environment files:
 
 ```sh
-cd my-turborepo
-npx turbo build
-pnpm dlx turbo build
-pnpm exec turbo build
+cp apps/backend/.env.example apps/backend/.env
 ```
 
-You can build a specific package by using a [filter](https://turborepo.dev/docs/crafting-your-repository/running-tasks#using-filters):
+Update `apps/backend/.env` with database and Bags API credentials.
 
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed:
+For the web app, set `ASTRALMARKET_API_BASE_URL` if the backend is not running on the default `http://127.0.0.1:4000`.
+
+## Development
+
+Run the web and backend apps together:
 
 ```sh
-turbo build --filter=docs
+pnpm dev:apps
 ```
 
-Without global `turbo`:
+The default local services are:
+
+- Web: `http://localhost:3000`
+- Backend API: `http://127.0.0.1:4000`
+
+Run individual apps when needed:
 
 ```sh
-npx turbo build --filter=docs
-pnpm exec turbo build --filter=docs
-pnpm exec turbo build --filter=docs
+pnpm --filter web dev
+pnpm --filter backend dev
 ```
 
-### Develop
+## Database
 
-To develop all apps and packages, run the following command:
+The Prisma schema and migrations live in `apps/backend/prisma`.
 
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed (recommended):
+Generate the Prisma client:
 
 ```sh
-cd my-turborepo
-turbo dev
+pnpm --filter backend exec prisma generate
 ```
 
-Without global `turbo`, use your package manager:
+Apply migrations:
 
 ```sh
-cd my-turborepo
-npx turbo dev
-pnpm exec turbo dev
-pnpm exec turbo dev
+pnpm --filter backend exec prisma migrate deploy
 ```
 
-You can develop a specific package by using a [filter](https://turborepo.dev/docs/crafting-your-repository/running-tasks#using-filters):
+For local migration work, use Prisma from the backend package directory so it can load `apps/backend/prisma.config.ts`.
 
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed:
+## Data Sync
+
+The backend can sync Bags market data through a scheduled job or a manual admin endpoint.
+
+Manual script:
 
 ```sh
-turbo dev --filter=web
+pnpm --filter backend sync:bags
 ```
 
-Without global `turbo`:
+Manual API trigger:
 
 ```sh
-npx turbo dev --filter=web
-pnpm exec turbo dev --filter=web
-pnpm exec turbo dev --filter=web
+curl -X POST http://127.0.0.1:4000/v1/admin/sync/bags \
+  -H "x-admin-sync-secret: <ADMIN_SYNC_SECRET>"
 ```
 
-### Remote Caching
+Set `ADMIN_SYNC_SECRET` in production. If it is empty, the admin sync endpoint is not protected by this header.
 
-> [!TIP]
-> Vercel Remote Cache is free for all plans. Get started today at [vercel.com](https://vercel.com/signup?utm_source=remote-cache-sdk&utm_campaign=free_remote_cache).
+Useful sync environment variables:
 
-Turborepo can use a technique known as [Remote Caching](https://turborepo.dev/docs/core-concepts/remote-caching) to share cache artifacts across machines, enabling you to share build caches with your team and CI/CD pipelines.
+- `BAGS_SYNC_ENABLED` - enables the scheduler.
+- `BAGS_SYNC_INTERVAL_MINUTES` - scheduler interval.
+- `BAGS_SYNC_ON_START` - runs a sync when the backend starts.
+- `PRICE_QUOTE_MINT` - quote mint used for Bags trade quotes.
+- `SOLANA_RPC_URL` - RPC endpoint for token supply lookups.
 
-By default, Turborepo will cache locally. To enable Remote Caching you will need an account with Vercel. If you don't have an account you can [create one](https://vercel.com/signup?utm_source=turborepo-examples), then enter the following commands:
+## API Routes
 
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed (recommended):
+Primary backend routes:
+
+- `GET /health`
+- `GET /v1/bags/category`
+- `GET /v1/bags/market?page=1&limit=50`
+- `GET /v1/bags/coins/:identifier`
+- `POST /v1/admin/sync/bags`
+
+API responses use a common envelope:
+
+```json
+{
+  "success": true,
+  "response": {}
+}
+```
+
+## Checks
+
+Run type checks:
 
 ```sh
-cd my-turborepo
-turbo login
+pnpm check-types
 ```
 
-Without global `turbo`, use your package manager:
+Run lint:
 
 ```sh
-cd my-turborepo
-npx turbo login
-pnpm exec turbo login
-pnpm exec turbo login
+pnpm lint
 ```
 
-This will authenticate the Turborepo CLI with your [Vercel account](https://vercel.com/docs/concepts/personal-accounts/overview).
-
-Next, you can link your Turborepo to your Remote Cache by running the following command from the root of your Turborepo:
-
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed:
+Run the backend leaderboard ranking test:
 
 ```sh
-turbo link
+pnpm --filter backend test:ranking
 ```
 
-Without global `turbo`:
+Build all packages:
 
 ```sh
-npx turbo link
-pnpm exec turbo link
-pnpm exec turbo link
+pnpm build
 ```
-
-## Useful Links
-
-Learn more about the power of Turborepo:
-
-- [Tasks](https://turborepo.dev/docs/crafting-your-repository/running-tasks)
-- [Caching](https://turborepo.dev/docs/crafting-your-repository/caching)
-- [Remote Caching](https://turborepo.dev/docs/core-concepts/remote-caching)
-- [Filtering](https://turborepo.dev/docs/crafting-your-repository/running-tasks#using-filters)
-- [Configuration Options](https://turborepo.dev/docs/reference/configuration)
-- [CLI Usage](https://turborepo.dev/docs/reference/command-line-reference)

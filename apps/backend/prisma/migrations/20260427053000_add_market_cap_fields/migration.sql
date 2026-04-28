@@ -1,0 +1,4 @@
+ALTER TABLE "TokenMarketSnapshot"
+ADD COLUMN "tokenSupply" TEXT,
+ADD COLUMN "price" DOUBLE PRECISION,
+ADD COLUMN "marketCap" DOUBLE PRECISION;

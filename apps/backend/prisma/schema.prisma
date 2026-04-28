@@ -1,0 +1,128 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model BagsToken {
+  id              String   @id @default(cuid())
+  tokenMint       String   @unique
+  name            String
+  symbol          String
+  description     String?
+  image           String?
+  status          String
+  migrationStatus String   @default("launching")
+  website         String?
+  twitter         String?
+  uri             String?
+  launchSignature String?
+  raw             Json?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  pool      BagsPool?
+  creators  TokenCreator[]
+  snapshots TokenMarketSnapshot[]
+
+  @@index([symbol])
+  @@index([name])
+  @@index([status])
+  @@index([migrationStatus])
+}
+
+model BagsPool {
+  id            String   @id @default(cuid())
+  tokenMint     String   @unique
+  dbcConfigKey  String?
+  dbcPoolKey    String?
+  dammV2PoolKey String?
+  raw           Json?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  token BagsToken @relation(fields: [tokenMint], references: [tokenMint], onDelete: Cascade)
+}
+
+model TokenCreator {
+  id               String   @id @default(cuid())
+  tokenMint        String
+  wallet           String?
+  username         String?
+  pfp              String?
+  provider         String?
+  providerUsername String?
+  twitterUsername  String?
+  bagsUsername     String?
+  royaltyBps       Int?
+  isCreator        Boolean?
+  isAdmin          Boolean?
+  raw              Json?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  token BagsToken @relation(fields: [tokenMint], references: [tokenMint], onDelete: Cascade)
+
+  @@index([tokenMint])
+  @@unique([tokenMint, wallet])
+}
+
+model TokenMarketSnapshot {
+  id                   String   @id @default(cuid())
+  tokenMint            String
+  quoteMint            String
+  outAmount            String?
+  priceImpactPct       String?
+  lifetimeFeesLamports String?
+  tokenSupply          String?
+  price                Float?
+  marketCap            Float?
+  priceChange1h        Float?
+  priceChange6h        Float?
+  priceChange24h       Float?
+  volume24h            Float?
+  liquidityUsd         Float?
+  dexPairAddress       String?
+  dexTokenName         String?
+  dexTokenSymbol       String?
+  dexImage             String?
+  marketDataSource     String?
+  marketSignal         Float?
+  migrationStatus      String
+  capturedAt           DateTime @default(now())
+  rawQuote             Json?
+
+  token BagsToken @relation(fields: [tokenMint], references: [tokenMint], onDelete: Cascade)
+
+  @@index([tokenMint, capturedAt])
+  @@index([capturedAt])
+}
+
+model MarketNews {
+  id        String   @id @default(cuid())
+  sourceKey String   @unique
+  tokenMint String?
+  headline  String
+  detail    String
+  source    String
+  href      String?
+  createdAt DateTime @default(now())
+
+  @@index([tokenMint])
+  @@index([createdAt])
+}
+
+model SyncRun {
+  id          String    @id @default(cuid())
+  source      String
+  status      String
+  startedAt   DateTime  @default(now())
+  finishedAt  DateTime?
+  rowsRead    Int       @default(0)
+  rowsWritten Int       @default(0)
+  error       String?
+}
