@@ -28,6 +28,18 @@ const chunk = <T>(items: T[], size: number) => {
   return chunks;
 };
 
+const priceChangeWindows = [
+  { key: "h1", ageMs: 60 * 60 * 1000 },
+  { key: "h6", ageMs: 6 * 60 * 60 * 1000 },
+  { key: "h24", ageMs: 24 * 60 * 60 * 1000 },
+] as const;
+
+type PriceChangeWindow = (typeof priceChangeWindows)[number]["key"];
+type HistoricalPriceReferences = Map<
+  string,
+  Partial<Record<PriceChangeWindow, number>>
+>;
+
 export type BagsSyncResult = {
   syncRunId: string;
   rowsRead: number;
@@ -41,7 +53,90 @@ export type BagsSyncResult = {
     marketCaps: number;
     images: number;
     skippedNoMarketData: number;
+    derivedPriceChanges: number;
   };
+};
+
+const derivePriceChange = (
+  currentPrice: number | null,
+  referencePrice?: number,
+) => {
+  if (
+    currentPrice === null ||
+    referencePrice === undefined ||
+    !Number.isFinite(currentPrice) ||
+    !Number.isFinite(referencePrice) ||
+    referencePrice <= 0
+  ) {
+    return null;
+  }
+
+  return Number(
+    (((currentPrice - referencePrice) / referencePrice) * 100).toFixed(2),
+  );
+};
+
+const getHistoricalPriceReferences = async (
+  prisma: PrismaClient,
+  tokenMints: string[],
+  capturedAt: Date,
+): Promise<HistoricalPriceReferences> => {
+  const references: HistoricalPriceReferences = new Map();
+
+  if (tokenMints.length === 0) {
+    return references;
+  }
+
+  const oldestWindowMs = Math.max(
+    ...priceChangeWindows.map((window) => window.ageMs),
+  );
+  const oldestReferenceAt = new Date(
+    capturedAt.getTime() - oldestWindowMs - 6 * 60 * 60 * 1000,
+  );
+  const newestReferenceAt = new Date(
+    capturedAt.getTime() -
+      Math.min(...priceChangeWindows.map((window) => window.ageMs)),
+  );
+  const snapshots = await prisma.tokenMarketSnapshot.findMany({
+    where: {
+      tokenMint: {
+        in: tokenMints,
+      },
+      price: {
+        not: null,
+      },
+      capturedAt: {
+        gte: oldestReferenceAt,
+        lte: newestReferenceAt,
+      },
+    },
+    orderBy: {
+      capturedAt: "desc",
+    },
+  });
+
+  for (const snapshot of snapshots) {
+    if (snapshot.price === null) {
+      continue;
+    }
+
+    const tokenReferences = references.get(snapshot.tokenMint) ?? {};
+
+    for (const window of priceChangeWindows) {
+      const cutoff = capturedAt.getTime() - window.ageMs;
+
+      if (
+        tokenReferences[window.key] === undefined &&
+        snapshot.capturedAt.getTime() <= cutoff
+      ) {
+        tokenReferences[window.key] = snapshot.price;
+      }
+    }
+
+    references.set(snapshot.tokenMint, tokenReferences);
+  }
+
+  return references;
 };
 
 export const upsertLaunch = async (
@@ -198,6 +293,14 @@ export const syncBagsMarket = async (
       }
     }
 
+    const snapshotCapturedAt = new Date();
+    const historicalPriceReferences = await getHistoricalPriceReferences(
+      prisma,
+      enrichedLaunches.map((launch) => launch.tokenMint),
+      snapshotCapturedAt,
+    );
+    let derivedPriceChanges = 0;
+
     await prisma.tokenMarketSnapshot.createMany({
       data: enrichedLaunches.map((launch, index) => {
         const quote = quoteResults.get(launch.tokenMint);
@@ -209,6 +312,28 @@ export const syncBagsMarket = async (
           (price !== null && supply?.uiAmount
             ? Number((price * supply.uiAmount).toFixed(2))
             : null);
+        const priceReferences = historicalPriceReferences.get(launch.tokenMint);
+        const priceChange1h =
+          dexMarketData?.priceChange1h ??
+          derivePriceChange(price, priceReferences?.h1);
+        const priceChange6h =
+          dexMarketData?.priceChange6h ??
+          derivePriceChange(price, priceReferences?.h6);
+        const priceChange24h =
+          dexMarketData?.priceChange24h ??
+          derivePriceChange(price, priceReferences?.h24);
+
+        if (dexMarketData?.priceChange1h == null && priceChange1h !== null) {
+          derivedPriceChanges += 1;
+        }
+
+        if (dexMarketData?.priceChange6h == null && priceChange6h !== null) {
+          derivedPriceChanges += 1;
+        }
+
+        if (dexMarketData?.priceChange24h == null && priceChange24h !== null) {
+          derivedPriceChanges += 1;
+        }
 
         return {
           tokenMint: launch.tokenMint,
@@ -219,9 +344,9 @@ export const syncBagsMarket = async (
           tokenSupply: supply?.uiAmountString,
           price,
           marketCap,
-          priceChange1h: dexMarketData?.priceChange1h,
-          priceChange6h: dexMarketData?.priceChange6h,
-          priceChange24h: dexMarketData?.priceChange24h,
+          priceChange1h,
+          priceChange6h,
+          priceChange24h,
           volume24h: dexMarketData?.volume24h,
           liquidityUsd: dexMarketData?.liquidityUsd,
           dexPairAddress: dexMarketData?.dexPairAddress,
@@ -235,6 +360,7 @@ export const syncBagsMarket = async (
               : undefined,
           marketSignal: getMarketSignal(launch, index),
           migrationStatus: launch.migrationStatus,
+          capturedAt: snapshotCapturedAt,
         };
       }),
     });
@@ -286,6 +412,7 @@ export const syncBagsMarket = async (
       ).length,
       images: enrichedLaunches.filter((launch) => launch.image).length,
       skippedNoMarketData: enrichedLaunches.length - dexResults.size,
+      derivedPriceChanges,
     };
 
     await prisma.syncRun.update({
