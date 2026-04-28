@@ -26,8 +26,10 @@ const marketItemSchema = z.object({
   score: z.number(),
   price: z.number().nullable(),
   marketCap: z.number().nullable(),
+  volume24h: z.number().nullable(),
   change1h: z.number().nullable(),
   change24h: z.number().nullable(),
+  change7d: z.number().nullable(),
   sparkline: z.array(z.number()),
   label: z.string(),
   href: z.string(),
@@ -39,7 +41,8 @@ const newsItemSchema = z.object({
   detail: z.string(),
   tokenMint: z.string().optional(),
   href: z.string(),
-  source: z.literal("bags_launch_feed"),
+  source: z.string(),
+  createdAt: z.string(),
 });
 
 const bagsMarketResponseSchema = z.object({
@@ -64,8 +67,49 @@ const bagsMarketResponseSchema = z.object({
       hasPreviousPage: z.boolean(),
     }),
     insights: z.array(newsItemSchema),
+    latestBagsSignals: z.array(newsItemSchema),
+    latestCryptoNews: z.array(newsItemSchema),
     latestMarketNews: z.array(newsItemSchema),
   }),
+});
+
+const bagsSignalLimit = 5;
+const cryptoNewsLimit = 10;
+
+const toNewsItem = (item: {
+  detail: string;
+  headline: string;
+  href: string | null;
+  source: string;
+  tokenMint: string | null;
+  createdAt: Date;
+}) => ({
+  headline: item.headline,
+  detail: item.detail,
+  tokenMint: item.tokenMint ?? undefined,
+  href: item.href ?? "/",
+  source: item.source,
+  createdAt: item.createdAt.toISOString(),
+});
+
+const toLaunchNewsItem = (launch: {
+  migrationStatus: "migrated" | "dbc" | "launching";
+  name: string;
+  symbol: string;
+  tokenMint: string;
+  updatedAt?: Date;
+}) => ({
+  headline: `${launch.symbol || launch.name} is cached from Bags`,
+  detail:
+    launch.migrationStatus === "migrated"
+      ? "Pool has migrated to DAMM v2."
+      : launch.migrationStatus === "dbc"
+        ? "Token has an active DBC pool."
+        : "Token is still in launch state.",
+  tokenMint: launch.tokenMint,
+  href: `/coins/${encodeURIComponent(launch.tokenMint)}`,
+  source: "bags_launch_feed" as const,
+  createdAt: (launch.updatedAt ?? new Date()).toISOString(),
 });
 
 const toMarketItem = (
@@ -90,8 +134,10 @@ const toMarketItem = (
     score,
     price: null,
     marketCap: null,
+    volume24h: null,
     change1h: null,
     change24h: null,
+    change7d: null,
     sparkline: Array.from({ length: 12 }, (_, sparkIndex) =>
       Number((score - 6 + sparkIndex * 0.6).toFixed(2)),
     ),
@@ -139,28 +185,16 @@ const bagsMarketRoute: FastifyPluginAsync = async (fastify) => {
             Math.ceil(leaderboards.leaderboardTotal / limit),
             1,
           );
-          const cachedNews = await getCachedMarketNews(fastify.prisma, limit);
-          const latestMarketNews =
-            cachedNews.length > 0
-              ? cachedNews.map((item) => ({
-                  headline: item.headline,
-                  detail: item.detail,
-                  tokenMint: item.tokenMint ?? undefined,
-                  href: item.href ?? "/",
-                  source: "bags_launch_feed" as const,
-                }))
-              : cachedLaunches.slice(0, limit).map((launch) => ({
-                  headline: `${launch.symbol || launch.name} is cached from Bags`,
-                  detail:
-                    launch.migrationStatus === "migrated"
-                      ? "Pool has migrated to DAMM v2."
-                      : launch.migrationStatus === "dbc"
-                        ? "Token has an active DBC pool."
-                        : "Token is still in launch state.",
-                  tokenMint: launch.tokenMint,
-                  href: `/coins/${encodeURIComponent(launch.tokenMint)}`,
-                  source: "bags_launch_feed" as const,
-                }));
+          const cachedNews = await getCachedMarketNews(fastify.prisma, {
+            bagsSignalLimit,
+            cryptoNewsLimit,
+          });
+          const latestCryptoNews = cachedNews.cryptoNews.map(toNewsItem);
+          const latestBagsSignals =
+            cachedNews.bagsSignals.length > 0
+              ? cachedNews.bagsSignals.map(toNewsItem)
+              : cachedLaunches.slice(0, bagsSignalLimit).map(toLaunchNewsItem);
+          const latestMarketNews = [...latestCryptoNews, ...latestBagsSignals];
 
           return {
             success: true as const,
@@ -177,7 +211,9 @@ const bagsMarketRoute: FastifyPluginAsync = async (fastify) => {
                 hasNextPage: page < totalPages,
                 hasPreviousPage: page > 1,
               },
-              insights: latestMarketNews.slice(0, 3),
+              insights: latestBagsSignals.slice(0, 3),
+              latestBagsSignals,
+              latestCryptoNews,
               latestMarketNews,
             },
           };
@@ -202,22 +238,27 @@ const bagsMarketRoute: FastifyPluginAsync = async (fastify) => {
           })
           .slice(0, limit)
           .map(toMarketItem);
-        const latestMarketNews = launches.slice(0, limit).map((launch) => {
-          const displaySymbol = launch.symbol.trim() || launch.name;
+        const latestBagsSignals = launches
+          .slice(0, bagsSignalLimit)
+          .map((launch) => {
+            const displaySymbol = launch.symbol.trim() || launch.name;
 
-          return {
-            headline: `${displaySymbol} entered the Bags launch feed as ${launch.status.replace(/_/gu, " ")}`,
-            detail:
-              launch.migrationStatus === "migrated"
-                ? "Pool has migrated to DAMM v2."
-                : launch.migrationStatus === "dbc"
-                  ? "Token has an active DBC pool."
-                  : "Token is still in launch state.",
-            tokenMint: launch.tokenMint,
-            href: `/coins/${encodeURIComponent(launch.tokenMint)}`,
-            source: "bags_launch_feed" as const,
-          };
-        });
+            return {
+              headline: `${displaySymbol} entered the Bags launch feed as ${launch.status.replace(/_/gu, " ")}`,
+              detail:
+                launch.migrationStatus === "migrated"
+                  ? "Pool has migrated to DAMM v2."
+                  : launch.migrationStatus === "dbc"
+                    ? "Token has an active DBC pool."
+                    : "Token is still in launch state.",
+              tokenMint: launch.tokenMint,
+              href: `/coins/${encodeURIComponent(launch.tokenMint)}`,
+              source: "bags_launch_feed" as const,
+              createdAt: new Date().toISOString(),
+            };
+          });
+        const latestCryptoNews: typeof latestBagsSignals = [];
+        const latestMarketNews = [...latestCryptoNews, ...latestBagsSignals];
 
         return {
           success: true as const,
@@ -234,7 +275,9 @@ const bagsMarketRoute: FastifyPluginAsync = async (fastify) => {
               hasNextPage: false,
               hasPreviousPage: false,
             },
-            insights: latestMarketNews.slice(0, 3),
+            insights: latestBagsSignals.slice(0, 3),
+            latestBagsSignals,
+            latestCryptoNews,
             latestMarketNews,
           },
         };

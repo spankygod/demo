@@ -26,7 +26,7 @@ type TokenWithDetails = Prisma.BagsTokenGetPayload<{
       orderBy: {
         capturedAt: "desc";
       };
-      take: 64;
+      take: 336;
     };
   };
 }>;
@@ -43,7 +43,20 @@ type TokenWithLeaderboard = Prisma.BagsTokenGetPayload<{
   };
 }>;
 
+type TokenMarketHistoryPoint = {
+  capturedAt: Date;
+  price: number | null;
+  tokenMint: string;
+};
+
+type MarketHistoryByMint = Map<string, TokenMarketHistoryPoint[]>;
+type MarketHistoryReferenceByMint = Map<string, number>;
+
 const toJson = (value: unknown) => value as Prisma.InputJsonValue;
+const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
+const referenceToleranceMs = 2 * 60 * 60 * 1000;
+const maxSparklinePoints = 120;
+const maxCoinDetailSnapshots = 336;
 
 export const tokenToLaunchView = (token: TokenWithPool): BagsLaunchView => ({
   name: token.name,
@@ -71,6 +84,7 @@ export const tokenToLaunchView = (token: TokenWithPool): BagsLaunchView => ({
       ? token.migrationStatus
       : "launching",
   bagsUrl: `https://bags.fm/${token.tokenMint}`,
+  updatedAt: token.updatedAt,
 });
 
 export const getCachedLaunches = async (
@@ -199,10 +213,146 @@ const getSparkline = (score: number, rank: number) => {
   );
 };
 
+const downsamplePoints = (points: number[], maxPoints = maxSparklinePoints) => {
+  if (points.length <= maxPoints) {
+    return points;
+  }
+
+  return Array.from({ length: maxPoints }, (_, index) => {
+    const sourceIndex = Math.round(
+      (index / (maxPoints - 1)) * (points.length - 1),
+    );
+
+    return points[sourceIndex] as number;
+  });
+};
+
+const getPriceSparkline = (
+  history: TokenMarketHistoryPoint[] | undefined,
+  fallbackScore: number,
+  rank: number,
+) => {
+  const points =
+    history
+      ?.filter((snapshot) => snapshot.price !== null)
+      .map((snapshot) => snapshot.price as number) ?? [];
+
+  if (points.length >= 2) {
+    return downsamplePoints(points);
+  }
+
+  return getSparkline(fallbackScore, rank);
+};
+
+const getSevenDayChange = (
+  currentPrice: number | null | undefined,
+  referencePrice: number | undefined,
+) => {
+  if (
+    currentPrice === null ||
+    currentPrice === undefined ||
+    referencePrice === undefined ||
+    !Number.isFinite(currentPrice) ||
+    !Number.isFinite(referencePrice) ||
+    referencePrice <= 0
+  ) {
+    return null;
+  }
+
+  return Number(
+    (((currentPrice - referencePrice) / referencePrice) * 100).toFixed(2),
+  );
+};
+
+const getSevenDayMarketHistory = async (
+  prisma: PrismaClient,
+  tokenMints: string[],
+  capturedAt = new Date(),
+) => {
+  const historyByMint: MarketHistoryByMint = new Map();
+  const referenceByMint: MarketHistoryReferenceByMint = new Map();
+
+  if (tokenMints.length === 0) {
+    return {
+      historyByMint,
+      referenceByMint,
+    };
+  }
+
+  const sevenDaysAgo = new Date(capturedAt.getTime() - sevenDaysMs);
+  const referenceStart = new Date(
+    sevenDaysAgo.getTime() - referenceToleranceMs,
+  );
+  const [history, references] = await Promise.all([
+    prisma.tokenMarketSnapshot.findMany({
+      where: {
+        tokenMint: {
+          in: tokenMints,
+        },
+        price: {
+          not: null,
+        },
+        capturedAt: {
+          gte: sevenDaysAgo,
+        },
+      },
+      orderBy: {
+        capturedAt: "asc",
+      },
+      select: {
+        capturedAt: true,
+        price: true,
+        tokenMint: true,
+      },
+    }),
+    prisma.tokenMarketSnapshot.findMany({
+      where: {
+        tokenMint: {
+          in: tokenMints,
+        },
+        price: {
+          not: null,
+        },
+        capturedAt: {
+          gte: referenceStart,
+          lte: sevenDaysAgo,
+        },
+      },
+      orderBy: {
+        capturedAt: "desc",
+      },
+      select: {
+        capturedAt: true,
+        price: true,
+        tokenMint: true,
+      },
+    }),
+  ]);
+
+  for (const snapshot of history) {
+    const points = historyByMint.get(snapshot.tokenMint) ?? [];
+    points.push(snapshot);
+    historyByMint.set(snapshot.tokenMint, points);
+  }
+
+  for (const snapshot of references) {
+    if (snapshot.price !== null && !referenceByMint.has(snapshot.tokenMint)) {
+      referenceByMint.set(snapshot.tokenMint, snapshot.price);
+    }
+  }
+
+  return {
+    historyByMint,
+    referenceByMint,
+  };
+};
+
 const toLeaderboardItem = (
   entry: ReturnType<typeof buildLeaderboardEntry>,
   rank: number,
   metric: string,
+  historyByMint?: MarketHistoryByMint,
+  referenceByMint?: MarketHistoryReferenceByMint,
 ) => ({
   rank,
   name: entry.launch.name,
@@ -215,9 +365,18 @@ const toLeaderboardItem = (
     entry.latestSnapshot?.price ??
     calculateQuotePrice(entry.latestSnapshot?.rawQuote),
   marketCap: entry.latestSnapshot?.marketCap ?? null,
+  volume24h: entry.latestSnapshot?.volume24h ?? null,
   change1h: entry.latestSnapshot?.priceChange1h ?? null,
   change24h: entry.latestSnapshot?.priceChange24h ?? null,
-  sparkline: getSparkline(entry.latestSignal, rank),
+  change7d: getSevenDayChange(
+    entry.latestSnapshot?.price ?? null,
+    referenceByMint?.get(entry.launch.tokenMint),
+  ),
+  sparkline: getPriceSparkline(
+    historyByMint?.get(entry.launch.tokenMint),
+    entry.latestSignal,
+    rank,
+  ),
   label:
     entry.launch.migrationStatus === "migrated"
       ? "Migrated pool"
@@ -272,38 +431,62 @@ export const getCachedLeaderboards = async (
   const launchFeedEntries = entries.filter(
     (entry) => entry.launch.status !== "POOL_ONLY",
   );
-  const trending = rankTrendingTokens(launchFeedEntries)
-    .slice(0, options.sideListLimit)
-    .map((entry, index) =>
-      toLeaderboardItem(entry, index + 1, getTrendingMetric(entry)),
-    );
-  const topGainers = rankTopGainers(launchFeedEntries)
-    .slice(0, options.sideListLimit)
-    .map((entry, index) =>
-      toLeaderboardItem(
-        entry,
-        index + 1,
-        `${entry.latestSnapshot?.priceChange24h?.toFixed(1) ?? "N/A"}%`,
-      ),
-    );
+  const rankedTrending = rankTrendingTokens(launchFeedEntries).slice(
+    0,
+    options.sideListLimit,
+  );
+  const rankedTopGainers = rankTopGainers(launchFeedEntries).slice(
+    0,
+    options.sideListLimit,
+  );
   const rankedLeaderboard = rankMarketCapLeaderboard(entries);
-  const leaderboard = rankedLeaderboard
-    .slice(
-      options.leaderboardOffset,
-      options.leaderboardOffset + options.leaderboardLimit,
-    )
-    .map((entry, index) =>
-      toLeaderboardItem(
-        entry,
-        options.leaderboardOffset + index + 1,
-        entry.latestSnapshot?.marketCap === null ||
-          entry.latestSnapshot?.marketCap === undefined
-          ? "N/A"
-          : `$${entry.latestSnapshot.marketCap.toLocaleString(undefined, {
-              maximumFractionDigits: 0,
-            })}`,
+  const pagedLeaderboard = rankedLeaderboard.slice(
+    options.leaderboardOffset,
+    options.leaderboardOffset + options.leaderboardLimit,
+  );
+  const historyTokenMints = [
+    ...new Set(
+      [...rankedTrending, ...rankedTopGainers, ...pagedLeaderboard].map(
+        (entry) => entry.launch.tokenMint,
       ),
-    );
+    ),
+  ];
+  const { historyByMint, referenceByMint } = await getSevenDayMarketHistory(
+    prisma,
+    historyTokenMints,
+  );
+  const trending = rankedTrending.map((entry, index) =>
+    toLeaderboardItem(
+      entry,
+      index + 1,
+      getTrendingMetric(entry),
+      historyByMint,
+      referenceByMint,
+    ),
+  );
+  const topGainers = rankedTopGainers.map((entry, index) =>
+    toLeaderboardItem(
+      entry,
+      index + 1,
+      `${entry.latestSnapshot?.priceChange24h?.toFixed(1) ?? "N/A"}%`,
+      historyByMint,
+      referenceByMint,
+    ),
+  );
+  const leaderboard = pagedLeaderboard.map((entry, index) =>
+    toLeaderboardItem(
+      entry,
+      options.leaderboardOffset + index + 1,
+      entry.latestSnapshot?.marketCap === null ||
+        entry.latestSnapshot?.marketCap === undefined
+        ? "N/A"
+        : `$${entry.latestSnapshot.marketCap.toLocaleString(undefined, {
+            maximumFractionDigits: 0,
+          })}`,
+      historyByMint,
+      referenceByMint,
+    ),
+  );
 
   return {
     leaderboard,
@@ -315,14 +498,39 @@ export const getCachedLeaderboards = async (
 
 export const getCachedMarketNews = async (
   prisma: PrismaClient,
-  limit: number,
-) =>
-  prisma.marketNews.findMany({
-    orderBy: {
-      createdAt: "desc",
-    },
-    take: limit,
-  });
+  options: {
+    bagsSignalLimit: number;
+    cryptoNewsLimit: number;
+  },
+) => {
+  const [cryptoNews, bagsSignals] = await Promise.all([
+    prisma.marketNews.findMany({
+      where: {
+        source: "fmp_crypto_news",
+      },
+      orderBy: {
+        createdAt: "desc",
+      },
+      take: options.cryptoNewsLimit,
+    }),
+    prisma.marketNews.findMany({
+      where: {
+        source: {
+          not: "fmp_crypto_news",
+        },
+      },
+      orderBy: {
+        createdAt: "desc",
+      },
+      take: options.bagsSignalLimit,
+    }),
+  ]);
+
+  return {
+    bagsSignals,
+    cryptoNews,
+  };
+};
 
 export const findCachedToken = async (
   prisma: PrismaClient,
@@ -341,7 +549,7 @@ export const findCachedToken = async (
         orderBy: {
           capturedAt: "desc",
         },
-        take: 64,
+        take: maxCoinDetailSnapshots,
       },
     },
     where: {

@@ -27,6 +27,8 @@ const syncResponseSchema = z.object({
       images: z.number(),
       skippedNoMarketData: z.number(),
       derivedPriceChanges: z.number(),
+      priceChanges1h: z.number(),
+      priceChanges24h: z.number(),
     }),
   }),
 });

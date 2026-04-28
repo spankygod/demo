@@ -10,6 +10,7 @@
     "clean": "node -e \"require('fs').rmSync('dist', { recursive: true, force: true })\"",
     "dev": "pnpm run build:ts && concurrently -k -p \"[{name}]\" -n \"TypeScript,App\" -c \"yellow.bold,cyan.bold\" \"pnpm:watch:ts\" \"pnpm:dev:start\"",
     "dev:start": "fastify start --ignore-watch=.ts$ -w -l info -P dist/src/app.js",
+    "sync:bags:dev": "tsx src/scripts/sync-bags.ts",
     "sync:bags": "pnpm run build:ts && node dist/src/scripts/sync-bags.js",
     "test:ranking": "pnpm run build:ts && node --test dist/src/lib/bags-leaderboards.test.js",
     "start": "pnpm run build:ts && fastify start -l info dist/src/app.js",
@@ -35,6 +36,7 @@
     "concurrently": "^9.2.1",
     "fastify-tsconfig": "^3.0.0",
     "prisma": "^6.19.3",
+    "tsx": "^4.21.0",
     "typescript": "^5.9.2"
   }
 }

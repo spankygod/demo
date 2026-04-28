@@ -14,6 +14,7 @@ import {
   getNullableQuote,
   type BagsLaunchView,
 } from "./bags-market";
+import { FmpNewsApiError, getLatestCryptoNews } from "./fmp-news-client";
 import { getTokenSupply } from "./solana-rpc";
 
 const toJson = (value: unknown) => value as Prisma.InputJsonValue;
@@ -30,9 +31,10 @@ const chunk = <T>(items: T[], size: number) => {
 
 const priceChangeWindows = [
   { key: "h1", ageMs: 60 * 60 * 1000 },
-  { key: "h6", ageMs: 6 * 60 * 60 * 1000 },
   { key: "h24", ageMs: 24 * 60 * 60 * 1000 },
 ] as const;
+const fallbackQuoteLimit = 100;
+const fmpNewsSource = "fmp_crypto_news";
 
 type PriceChangeWindow = (typeof priceChangeWindows)[number]["key"];
 type HistoricalPriceReferences = Map<
@@ -54,6 +56,8 @@ export type BagsSyncResult = {
     images: number;
     skippedNoMarketData: number;
     derivedPriceChanges: number;
+    priceChanges1h: number;
+    priceChanges24h: number;
   };
 };
 
@@ -137,6 +141,178 @@ const getHistoricalPriceReferences = async (
   }
 
   return references;
+};
+
+const marketDataPriorityScore = (
+  launch: BagsLaunchView,
+  dexMarketData: DexMarketData | undefined,
+  index: number,
+) => {
+  if (
+    dexMarketData?.marketCap !== null &&
+    dexMarketData?.marketCap !== undefined
+  ) {
+    return dexMarketData.marketCap;
+  }
+
+  if (
+    dexMarketData?.liquidityUsd !== null &&
+    dexMarketData?.liquidityUsd !== undefined
+  ) {
+    return dexMarketData.liquidityUsd;
+  }
+
+  if (
+    dexMarketData?.volume24h !== null &&
+    dexMarketData?.volume24h !== undefined
+  ) {
+    return dexMarketData.volume24h;
+  }
+
+  return getMarketSignal(launch, index);
+};
+
+const getFallbackQuoteTargets = (
+  launches: BagsLaunchView[],
+  dexResults: Map<string, DexMarketData>,
+) =>
+  launches
+    .map((launch, index) => ({
+      launch,
+      priorityScore: marketDataPriorityScore(
+        launch,
+        dexResults.get(launch.tokenMint),
+        index,
+      ),
+    }))
+    .sort((a, b) => b.priorityScore - a.priorityScore)
+    .slice(0, fallbackQuoteLimit)
+    .map((item) => item.launch);
+
+const parseFmpPublishedDate = (value: string) => {
+  const date = new Date(`${value.replace(" ", "T")}Z`);
+
+  return Number.isNaN(date.getTime()) ? new Date() : date;
+};
+
+const getUtcDayStart = (date: Date) =>
+  new Date(
+    Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()),
+  );
+
+const reserveFmpNewsRequest = async (prisma: PrismaClient) => {
+  if (!env.newsApiKey) {
+    return null;
+  }
+
+  const startedAt = new Date();
+  const requestsToday = await prisma.syncRun.count({
+    where: {
+      source: fmpNewsSource,
+      startedAt: {
+        gte: getUtcDayStart(startedAt),
+      },
+      status: {
+        not: "skipped",
+      },
+    },
+  });
+
+  if (requestsToday >= env.fmpNewsDailyRequestLimit) {
+    await prisma.syncRun.create({
+      data: {
+        source: fmpNewsSource,
+        status: "skipped",
+        startedAt,
+        finishedAt: new Date(),
+        error: `Daily FMP news request limit reached (${env.fmpNewsDailyRequestLimit})`,
+      },
+    });
+
+    return null;
+  }
+
+  return prisma.syncRun.create({
+    data: {
+      source: fmpNewsSource,
+      status: "running",
+      startedAt,
+      rowsRead: 1,
+    },
+  });
+};
+
+const syncCryptoNews = async (prisma: PrismaClient) => {
+  const fmpRequestRun = await reserveFmpNewsRequest(prisma);
+
+  if (!fmpRequestRun) {
+    return 0;
+  }
+
+  try {
+    const news = await getLatestCryptoNews({ limit: 50 });
+
+    for (const newsChunk of chunk(news, 25)) {
+      await Promise.all(
+        newsChunk.map((item) => {
+          const publishedAt = parseFmpPublishedDate(item.publishedDate);
+          const sourceLabel = item.publisher ?? item.site ?? "FMP Crypto News";
+          const detail = item.text?.trim()
+            ? `${sourceLabel}: ${item.text.trim()}`
+            : `Latest crypto market news from ${sourceLabel}.`;
+
+          return prisma.marketNews.upsert({
+            where: {
+              sourceKey: `${fmpNewsSource}:${item.url}`,
+            },
+            create: {
+              sourceKey: `${fmpNewsSource}:${item.url}`,
+              headline: item.title,
+              detail,
+              source: fmpNewsSource,
+              href: item.url,
+              createdAt: publishedAt,
+            },
+            update: {
+              headline: item.title,
+              detail,
+              href: item.url,
+            },
+          });
+        }),
+      );
+    }
+
+    await prisma.syncRun.update({
+      where: {
+        id: fmpRequestRun.id,
+      },
+      data: {
+        status: "success",
+        finishedAt: new Date(),
+        rowsWritten: news.length,
+      },
+    });
+
+    return news.length;
+  } catch (error) {
+    await prisma.syncRun.update({
+      where: {
+        id: fmpRequestRun.id,
+      },
+      data: {
+        status: "error",
+        finishedAt: new Date(),
+        error: error instanceof Error ? error.message : "FMP news sync failed",
+      },
+    });
+
+    if (error instanceof FmpNewsApiError) {
+      return 0;
+    }
+
+    throw error;
+  }
 };
 
 export const upsertLaunch = async (
@@ -276,7 +452,10 @@ export const syncBagsMarket = async (
       rowsWritten += launchChunk.length;
     }
 
-    const fallbackQuoteTargets = enrichedLaunches.slice(0, 100);
+    const fallbackQuoteTargets = getFallbackQuoteTargets(
+      enrichedLaunches,
+      dexResults,
+    );
 
     for (const marketDataChunk of chunk(fallbackQuoteTargets, 5)) {
       const marketData = await Promise.all(
@@ -301,68 +480,63 @@ export const syncBagsMarket = async (
     );
     let derivedPriceChanges = 0;
 
+    const snapshotRows = enrichedLaunches.map((launch, index) => {
+      const quote = quoteResults.get(launch.tokenMint);
+      const supply = supplyResults.get(launch.tokenMint);
+      const dexMarketData = dexResults.get(launch.tokenMint);
+      const price = dexMarketData?.price ?? calculateQuotePrice(quote);
+      const marketCap =
+        dexMarketData?.marketCap ??
+        (price !== null && supply?.uiAmount
+          ? Number((price * supply.uiAmount).toFixed(2))
+          : null);
+      const priceReferences = historicalPriceReferences.get(launch.tokenMint);
+      const priceChange1h =
+        dexMarketData?.priceChange1h ??
+        derivePriceChange(price, priceReferences?.h1);
+      const priceChange24h =
+        dexMarketData?.priceChange24h ??
+        derivePriceChange(price, priceReferences?.h24);
+
+      if (dexMarketData?.priceChange1h == null && priceChange1h !== null) {
+        derivedPriceChanges += 1;
+      }
+
+      if (dexMarketData?.priceChange24h == null && priceChange24h !== null) {
+        derivedPriceChanges += 1;
+      }
+
+      return {
+        tokenMint: launch.tokenMint,
+        quoteMint: env.priceQuoteMint,
+        outAmount: quote?.outAmount,
+        priceImpactPct: quote?.priceImpactPct,
+        rawQuote: quote ? toJson(quote) : undefined,
+        tokenSupply: supply?.uiAmountString,
+        price,
+        marketCap,
+        priceChange1h,
+        priceChange6h: null,
+        priceChange24h,
+        volume24h: dexMarketData?.volume24h,
+        liquidityUsd: dexMarketData?.liquidityUsd,
+        dexPairAddress: dexMarketData?.dexPairAddress,
+        dexTokenName: dexMarketData?.name,
+        dexTokenSymbol: dexMarketData?.symbol,
+        dexImage: dexMarketData?.image,
+        marketDataSource: dexMarketData
+          ? "dexscreener"
+          : price
+            ? "bags_quote"
+            : undefined,
+        marketSignal: getMarketSignal(launch, index),
+        migrationStatus: launch.migrationStatus,
+        capturedAt: snapshotCapturedAt,
+      };
+    });
+
     await prisma.tokenMarketSnapshot.createMany({
-      data: enrichedLaunches.map((launch, index) => {
-        const quote = quoteResults.get(launch.tokenMint);
-        const supply = supplyResults.get(launch.tokenMint);
-        const dexMarketData = dexResults.get(launch.tokenMint);
-        const price = dexMarketData?.price ?? calculateQuotePrice(quote);
-        const marketCap =
-          dexMarketData?.marketCap ??
-          (price !== null && supply?.uiAmount
-            ? Number((price * supply.uiAmount).toFixed(2))
-            : null);
-        const priceReferences = historicalPriceReferences.get(launch.tokenMint);
-        const priceChange1h =
-          dexMarketData?.priceChange1h ??
-          derivePriceChange(price, priceReferences?.h1);
-        const priceChange6h =
-          dexMarketData?.priceChange6h ??
-          derivePriceChange(price, priceReferences?.h6);
-        const priceChange24h =
-          dexMarketData?.priceChange24h ??
-          derivePriceChange(price, priceReferences?.h24);
-
-        if (dexMarketData?.priceChange1h == null && priceChange1h !== null) {
-          derivedPriceChanges += 1;
-        }
-
-        if (dexMarketData?.priceChange6h == null && priceChange6h !== null) {
-          derivedPriceChanges += 1;
-        }
-
-        if (dexMarketData?.priceChange24h == null && priceChange24h !== null) {
-          derivedPriceChanges += 1;
-        }
-
-        return {
-          tokenMint: launch.tokenMint,
-          quoteMint: env.priceQuoteMint,
-          outAmount: quote?.outAmount,
-          priceImpactPct: quote?.priceImpactPct,
-          rawQuote: quote ? toJson(quote) : undefined,
-          tokenSupply: supply?.uiAmountString,
-          price,
-          marketCap,
-          priceChange1h,
-          priceChange6h,
-          priceChange24h,
-          volume24h: dexMarketData?.volume24h,
-          liquidityUsd: dexMarketData?.liquidityUsd,
-          dexPairAddress: dexMarketData?.dexPairAddress,
-          dexTokenName: dexMarketData?.name,
-          dexTokenSymbol: dexMarketData?.symbol,
-          dexImage: dexMarketData?.image,
-          marketDataSource: dexMarketData
-            ? "dexscreener"
-            : price
-              ? "bags_quote"
-              : undefined,
-          marketSignal: getMarketSignal(launch, index),
-          migrationStatus: launch.migrationStatus,
-          capturedAt: snapshotCapturedAt,
-        };
-      }),
+      data: snapshotRows,
     });
     rowsWritten += enrichedLaunches.length;
 
@@ -399,6 +573,7 @@ export const syncBagsMarket = async (
       );
       rowsWritten += newsChunk.length;
     }
+    rowsWritten += await syncCryptoNews(prisma);
 
     const stats = buildMarketStats(feed, pools);
     const coverage = {
@@ -413,6 +588,12 @@ export const syncBagsMarket = async (
       images: enrichedLaunches.filter((launch) => launch.image).length,
       skippedNoMarketData: enrichedLaunches.length - dexResults.size,
       derivedPriceChanges,
+      priceChanges1h: snapshotRows.filter(
+        (snapshot) => snapshot.priceChange1h !== null,
+      ).length,
+      priceChanges24h: snapshotRows.filter(
+        (snapshot) => snapshot.priceChange24h !== null,
+      ).length,
     };
 
     await prisma.syncRun.update({
