@@ -96,9 +96,12 @@ function MarketList({
     <div className="rounded-lg border border-[#1f1f1f] bg-[#000000] p-4">
       <div className="mb-4 flex items-center justify-between">
         <h2 className="font-semibold text-slate-50">{title}</h2>
-        <span className="text-xs font-semibold uppercase text-slate-500">
-          Top 3
-        </span>
+        <Link
+          className="text-xs font-semibold uppercase text-slate-500 hover:text-white"
+          href="#leaderboard"
+        >
+          View more
+        </Link>
       </div>
       <div className="space-y-4">
         {rows.length === 0 ? (
