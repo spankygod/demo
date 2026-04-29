@@ -75,14 +75,6 @@ const buildLeaderboardEntry = (token: TokenWithLeaderboard, index: number) => {
   };
 };
 
-const getSparkline = (score: number, rank: number) => {
-  const start = Math.max(score - 8 - rank, 1);
-
-  return Array.from({ length: 12 }, (_, index) =>
-    Number((start + index * 0.7 + ((index + rank) % 3) * 0.45).toFixed(2)),
-  );
-};
-
 const downsamplePoints = (points: number[], maxPoints = maxSparklinePoints) => {
   if (points.length <= maxPoints) {
     return points;
@@ -97,21 +89,13 @@ const downsamplePoints = (points: number[], maxPoints = maxSparklinePoints) => {
   });
 };
 
-const getPriceSparkline = (
-  history: TokenMarketHistoryPoint[] | undefined,
-  fallbackScore: number,
-  rank: number,
-) => {
+const getPriceSparkline = (history: TokenMarketHistoryPoint[] | undefined) => {
   const points =
     history
       ?.filter((snapshot) => snapshot.price !== null)
       .map((snapshot) => snapshot.price as number) ?? [];
 
-  if (points.length >= 2) {
-    return downsamplePoints(points);
-  }
-
-  return getSparkline(fallbackScore, rank);
+  return downsamplePoints(points);
 };
 
 const getSevenDayChange = (
@@ -240,11 +224,7 @@ const toLeaderboardItem = (
     entry.latestSnapshot?.price ?? null,
     referenceByMint?.get(entry.launch.tokenMint),
   ),
-  sparkline: getPriceSparkline(
-    historyByMint?.get(entry.launch.tokenMint),
-    entry.latestSignal,
-    rank,
-  ),
+  sparkline: getPriceSparkline(historyByMint?.get(entry.launch.tokenMint)),
   label:
     entry.launch.migrationStatus === "migrated"
       ? "Migrated pool"
@@ -270,7 +250,9 @@ const toCachedLeaderboardItem = (row: CachedLeaderboardRow) => ({
   change24h: row.change24h,
   change7d: row.change7d,
   sparkline: Array.isArray(row.sparkline)
-    ? row.sparkline.filter((value): value is number => typeof value === "number")
+    ? row.sparkline.filter(
+        (value): value is number => typeof value === "number",
+      )
     : [],
   label: row.label,
   href: row.href,
