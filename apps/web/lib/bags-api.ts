@@ -67,6 +67,7 @@ export type BagsMarketData = {
   };
   trending: BagsMarketItem[];
   topGainers: BagsMarketItem[];
+  topEarners?: BagsMarketItem[];
   insights: BagsMarketNewsItem[];
   latestBagsSignals: BagsMarketNewsItem[];
   latestCryptoNews: BagsMarketNewsItem[];

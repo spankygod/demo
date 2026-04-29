@@ -40,6 +40,7 @@ function Sparkline({
     .map((point, index) => {
       const x = (index / (points.length - 1)) * width;
       const y = height - ((point - min) / span) * height;
+
       return `${index === 0 ? "M" : "L"} ${x.toFixed(2)} ${y.toFixed(2)}`;
     })
     .join(" ");
@@ -65,11 +66,25 @@ function Sparkline({
 }
 
 function MarketMetric({ value }: { value: string }) {
-  if (value === "N/A" || value === "-") {
+  const normalizedValue = value.trim();
+
+  if (
+    normalizedValue === "N/A" ||
+    normalizedValue === "N/A%" ||
+    normalizedValue === "-"
+  ) {
     return <span className="text-slate-500">-</span>;
   }
 
-  const negative = value.startsWith("-");
+  if (!normalizedValue.endsWith("%")) {
+    return (
+      <span className="font-mono text-sm font-medium text-zinc-100">
+        {normalizedValue}
+      </span>
+    );
+  }
+
+  const negative = normalizedValue.startsWith("-");
 
   return (
     <span
@@ -80,7 +95,7 @@ function MarketMetric({ value }: { value: string }) {
       }
     >
       {negative ? null : <ArrowUp className="size-3" />}
-      {value.replace("+", "")}
+      {normalizedValue.replace("+", "")}
     </span>
   );
 }
