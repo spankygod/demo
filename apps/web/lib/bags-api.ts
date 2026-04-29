@@ -184,7 +184,7 @@ export const fetchBagsMarket = (
   return fetchBackend<BagsMarketData>(
     `/v1/bags/market?limit=${pageSize}&page=${page}`,
     {
-      revalidate: 30,
+      revalidate: 300,
       tags: ["bags-market"],
     },
   );
@@ -194,7 +194,7 @@ export const fetchBagsCoin = (identifier: string) =>
   fetchBackend<BagsCoinDetailData>(
     `/v1/bags/coins/${encodeURIComponent(identifier)}`,
     {
-      revalidate: 60,
+      revalidate: 300,
       tags: ["bags-coin", `bags-coin-${identifier}`],
     },
   );

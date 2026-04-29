@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import localFont from "next/font/local";
 import type { ReactNode } from "react";
+import { Analytics } from "@vercel/analytics/next";
 
 import { cn } from "@/lib/utils";
 import "./globals.css";
@@ -36,6 +37,7 @@ export default function RootLayout({
     <html lang="en" className="dark">
       <body className={cn(geistSans.variable, geistMono.variable)}>
         {children}
+        <Analytics />
       </body>
     </html>
   );

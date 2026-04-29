@@ -7,40 +7,126 @@ import {
   rankTrendingTokens,
 } from "./bags-leaderboards";
 import {
-  calculateQuotePrice,
   getMarketSignal,
   type BagsLaunchView,
 } from "./bags-market";
 
+const poolSelect = {
+  tokenMint: true,
+  dbcConfigKey: true,
+  dbcPoolKey: true,
+  dammV2PoolKey: true,
+} satisfies Prisma.BagsPoolSelect;
+
+const tokenWithPoolSelect = {
+  name: true,
+  symbol: true,
+  description: true,
+  image: true,
+  tokenMint: true,
+  status: true,
+  twitter: true,
+  website: true,
+  launchSignature: true,
+  uri: true,
+  migrationStatus: true,
+  updatedAt: true,
+  pool: {
+    select: poolSelect,
+  },
+} satisfies Prisma.BagsTokenSelect;
+
+const creatorSelect = {
+  username: true,
+  pfp: true,
+  royaltyBps: true,
+  isCreator: true,
+  wallet: true,
+  provider: true,
+  providerUsername: true,
+  twitterUsername: true,
+  bagsUsername: true,
+  isAdmin: true,
+} satisfies Prisma.TokenCreatorSelect;
+
+const leaderboardSnapshotSelect = {
+  marketSignal: true,
+  price: true,
+  marketCap: true,
+  volume24h: true,
+  priceChange1h: true,
+  priceChange24h: true,
+} satisfies Prisma.TokenMarketSnapshotSelect;
+
+const detailSnapshotSelect = {
+  capturedAt: true,
+  price: true,
+  marketCap: true,
+  marketSignal: true,
+  priceChange1h: true,
+  priceChange24h: true,
+  lifetimeFeesLamports: true,
+} satisfies Prisma.TokenMarketSnapshotSelect;
+
+const latestSnapshotPayloadSelect = {
+  ...detailSnapshotSelect,
+  rawQuote: true,
+} satisfies Prisma.TokenMarketSnapshotSelect;
+
+const marketLeaderboardEntrySelect = {
+  rank: true,
+  name: true,
+  symbol: true,
+  image: true,
+  tokenMint: true,
+  metric: true,
+  score: true,
+  price: true,
+  marketCap: true,
+  volume24h: true,
+  change1h: true,
+  change24h: true,
+  change7d: true,
+  sparkline: true,
+  label: true,
+  href: true,
+  source: true,
+} satisfies Prisma.MarketLeaderboardEntrySelect;
+
+const tokenLeaderboardSelect = {
+  ...tokenWithPoolSelect,
+  snapshots: {
+    orderBy: {
+      capturedAt: "desc",
+    },
+    take: 2,
+    select: leaderboardSnapshotSelect,
+  },
+} satisfies Prisma.BagsTokenSelect;
+
 type TokenWithPool = Prisma.BagsTokenGetPayload<{
-  include: {
-    pool: true;
-  };
+  select: typeof tokenWithPoolSelect;
 }>;
 
-type TokenWithDetails = Prisma.BagsTokenGetPayload<{
-  include: {
-    creators: true;
-    pool: true;
-    snapshots: {
-      orderBy: {
-        capturedAt: "desc";
-      };
-      take: 336;
-    };
-  };
+type TokenCreatorView = Prisma.TokenCreatorGetPayload<{
+  select: typeof creatorSelect;
 }>;
+
+type TokenDetailSnapshot = Prisma.TokenMarketSnapshotGetPayload<{
+  select: typeof latestSnapshotPayloadSelect;
+}>;
+
+type TokenWithDetails = TokenWithPool & {
+  creators: TokenCreatorView[];
+  snapshots: TokenDetailSnapshot[];
+};
 
 type TokenWithLeaderboard = Prisma.BagsTokenGetPayload<{
-  include: {
-    pool: true;
-    snapshots: {
-      orderBy: {
-        capturedAt: "desc";
-      };
-      take: 2;
-    };
-  };
+  select: typeof tokenLeaderboardSelect;
+}>;
+
+type CachedLeaderboardRow = Prisma.MarketLeaderboardEntryGetPayload<{
+  select: typeof marketLeaderboardEntrySelect;
 }>;
 
 type TokenMarketHistoryPoint = {
@@ -95,9 +181,7 @@ export const getCachedLaunches = async (
   } = {},
 ) => {
   const tokens = await prisma.bagsToken.findMany({
-    include: {
-      pool: true,
-    },
+    select: tokenWithPoolSelect,
     where: options.excludePoolOnly
       ? {
           status: {
@@ -362,8 +446,7 @@ const toLeaderboardItem = (
   metric,
   score: entry.latestSignal,
   price:
-    entry.latestSnapshot?.price ??
-    calculateQuotePrice(entry.latestSnapshot?.rawQuote),
+    entry.latestSnapshot?.price ?? null,
   marketCap: entry.latestSnapshot?.marketCap ?? null,
   volume24h: entry.latestSnapshot?.volume24h ?? null,
   change1h: entry.latestSnapshot?.priceChange1h ?? null,
@@ -384,6 +467,28 @@ const toLeaderboardItem = (
         ? "Live DBC"
         : "Fresh launch",
   href: `/coins/${encodeURIComponent(entry.launch.tokenMint)}`,
+  source: "bags" as const,
+});
+
+const toCachedLeaderboardItem = (row: CachedLeaderboardRow) => ({
+  rank: row.rank,
+  name: row.name,
+  symbol: row.symbol,
+  image: row.image,
+  tokenMint: row.tokenMint,
+  metric: row.metric,
+  score: row.score,
+  price: row.price,
+  marketCap: row.marketCap,
+  volume24h: row.volume24h,
+  change1h: row.change1h,
+  change24h: row.change24h,
+  change7d: row.change7d,
+  sparkline: Array.isArray(row.sparkline)
+    ? row.sparkline.filter((value): value is number => typeof value === "number")
+    : [],
+  label: row.label,
+  href: row.href,
   source: "bags" as const,
 });
 
@@ -413,16 +518,57 @@ export const getCachedLeaderboards = async (
     sideListLimit: number;
   },
 ) => {
-  const tokens = await prisma.bagsToken.findMany({
-    include: {
-      pool: true,
-      snapshots: {
-        orderBy: {
-          capturedAt: "desc",
+  const [leaderboardTotal, leaderboardRows, trendingRows, topGainerRows] =
+    await Promise.all([
+      prisma.marketLeaderboardEntry.count({
+        where: {
+          kind: "market",
         },
-        take: 2,
-      },
-    },
+      }),
+      prisma.marketLeaderboardEntry.findMany({
+        where: {
+          kind: "market",
+        },
+        orderBy: {
+          rank: "asc",
+        },
+        skip: options.leaderboardOffset,
+        take: options.leaderboardLimit,
+        select: marketLeaderboardEntrySelect,
+      }),
+      prisma.marketLeaderboardEntry.findMany({
+        where: {
+          kind: "trending",
+        },
+        orderBy: {
+          rank: "asc",
+        },
+        take: options.sideListLimit,
+        select: marketLeaderboardEntrySelect,
+      }),
+      prisma.marketLeaderboardEntry.findMany({
+        where: {
+          kind: "top_gainers",
+        },
+        orderBy: {
+          rank: "asc",
+        },
+        take: options.sideListLimit,
+        select: marketLeaderboardEntrySelect,
+      }),
+    ]);
+
+  if (leaderboardTotal > 0) {
+    return {
+      leaderboard: leaderboardRows.map(toCachedLeaderboardItem),
+      leaderboardTotal,
+      trending: trendingRows.map(toCachedLeaderboardItem),
+      topGainers: topGainerRows.map(toCachedLeaderboardItem),
+    };
+  }
+
+  const tokens = await prisma.bagsToken.findMany({
+    select: tokenLeaderboardSelect,
     orderBy: {
       updatedAt: "desc",
     },
@@ -542,16 +688,7 @@ export const findCachedToken = async (
     .replace(/[^a-z0-9]+/gu, "-")
     .replace(/^-|-$/gu, "");
   const tokens = await prisma.bagsToken.findMany({
-    include: {
-      creators: true,
-      pool: true,
-      snapshots: {
-        orderBy: {
-          capturedAt: "desc",
-        },
-        take: maxCoinDetailSnapshots,
-      },
-    },
+    select: tokenWithPoolSelect,
     where: {
       OR: [
         { tokenMint: { equals: normalized, mode: "insensitive" } },
@@ -562,7 +699,7 @@ export const findCachedToken = async (
     take: 25,
   });
 
-  return (
+  const token =
     tokens.find(
       (token) =>
         token.name
@@ -571,8 +708,48 @@ export const findCachedToken = async (
           .replace(/^-|-$/gu, "") === slug,
     ) ??
     tokens.at(0) ??
-    null
-  );
+    null;
+
+  if (!token) {
+    return null;
+  }
+
+  const [creators, snapshots, latestSnapshot] = await Promise.all([
+    prisma.tokenCreator.findMany({
+      where: {
+        tokenMint: token.tokenMint,
+      },
+      select: creatorSelect,
+    }),
+    prisma.tokenMarketSnapshot.findMany({
+      where: {
+        tokenMint: token.tokenMint,
+      },
+      orderBy: {
+        capturedAt: "desc",
+      },
+      take: maxCoinDetailSnapshots,
+      select: detailSnapshotSelect,
+    }),
+    prisma.tokenMarketSnapshot.findFirst({
+      where: {
+        tokenMint: token.tokenMint,
+      },
+      orderBy: {
+        capturedAt: "desc",
+      },
+      select: latestSnapshotPayloadSelect,
+    }),
+  ]);
+
+  return {
+    ...token,
+    creators,
+    snapshots: snapshots.map((snapshot, index) => ({
+      ...snapshot,
+      rawQuote: index === 0 ? latestSnapshot?.rawQuote ?? null : null,
+    })),
+  };
 };
 
 export const upsertCachedCreators = async (

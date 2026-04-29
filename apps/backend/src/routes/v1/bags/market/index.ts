@@ -173,6 +173,7 @@ const bagsMarketRoute: FastifyPluginAsync = async (fastify) => {
       try {
         const cachedLaunches = await getCachedLaunches(fastify.prisma, {
           excludePoolOnly: true,
+          limit: bagsSignalLimit,
         });
 
         if (cachedLaunches.length > 0) {

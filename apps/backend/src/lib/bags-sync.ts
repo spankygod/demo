@@ -1,4 +1,4 @@
-import type { Prisma, PrismaClient } from "@prisma/client";
+import { Prisma, type PrismaClient } from "@prisma/client";
 
 import { env } from "../config/env";
 import { bagsClient } from "./bags-client";
@@ -14,6 +14,11 @@ import {
   getNullableQuote,
   type BagsLaunchView,
 } from "./bags-market";
+import {
+  rankMarketCapLeaderboard,
+  rankTopGainers,
+  rankTrendingTokens,
+} from "./bags-leaderboards";
 import { FmpNewsApiError, getLatestCryptoNews } from "./fmp-news-client";
 import { getTokenSupply } from "./solana-rpc";
 
@@ -35,12 +40,28 @@ const priceChangeWindows = [
 ] as const;
 const fallbackQuoteLimit = 100;
 const fmpNewsSource = "fmp_crypto_news";
+const cachedLeaderboardSideListLimit = 100;
 
 type PriceChangeWindow = (typeof priceChangeWindows)[number]["key"];
 type HistoricalPriceReferences = Map<
   string,
   Partial<Record<PriceChangeWindow, number>>
 >;
+type SnapshotRow = Prisma.TokenMarketSnapshotCreateManyInput & {
+  tokenMint: string;
+  marketSignal: number | null;
+  price: number | null;
+  marketCap: number | null;
+  volume24h: number | null;
+  priceChange1h: number | null;
+  priceChange24h: number | null;
+};
+type SyncLeaderboardEntry = {
+  launch: BagsLaunchView;
+  latestSignal: number;
+  latestSnapshot: SnapshotRow;
+  trendScore: number;
+};
 
 export type BagsSyncResult = {
   syncRunId: string;
@@ -91,53 +112,38 @@ const getHistoricalPriceReferences = async (
     return references;
   }
 
-  const oldestWindowMs = Math.max(
-    ...priceChangeWindows.map((window) => window.ageMs),
+  const referenceRows = await Promise.all(
+    priceChangeWindows.map(async (window) => {
+      const cutoff = new Date(capturedAt.getTime() - window.ageMs);
+      const oldestReferenceAt = new Date(
+        cutoff.getTime() - 6 * 60 * 60 * 1000,
+      );
+
+      return prisma.$queryRaw<
+        Array<{
+          tokenMint: string;
+          price: number;
+          windowKey: PriceChangeWindow;
+        }>
+      >(Prisma.sql`
+        SELECT DISTINCT ON ("tokenMint")
+          "tokenMint",
+          "price",
+          ${window.key}::text AS "windowKey"
+        FROM "TokenMarketSnapshot"
+        WHERE "tokenMint" IN (${Prisma.join(tokenMints)})
+          AND "price" IS NOT NULL
+          AND "capturedAt" >= ${oldestReferenceAt}
+          AND "capturedAt" <= ${cutoff}
+        ORDER BY "tokenMint", "capturedAt" DESC
+      `);
+    }),
   );
-  const oldestReferenceAt = new Date(
-    capturedAt.getTime() - oldestWindowMs - 6 * 60 * 60 * 1000,
-  );
-  const newestReferenceAt = new Date(
-    capturedAt.getTime() -
-      Math.min(...priceChangeWindows.map((window) => window.ageMs)),
-  );
-  const snapshots = await prisma.tokenMarketSnapshot.findMany({
-    where: {
-      tokenMint: {
-        in: tokenMints,
-      },
-      price: {
-        not: null,
-      },
-      capturedAt: {
-        gte: oldestReferenceAt,
-        lte: newestReferenceAt,
-      },
-    },
-    orderBy: {
-      capturedAt: "desc",
-    },
-  });
 
-  for (const snapshot of snapshots) {
-    if (snapshot.price === null) {
-      continue;
-    }
-
-    const tokenReferences = references.get(snapshot.tokenMint) ?? {};
-
-    for (const window of priceChangeWindows) {
-      const cutoff = capturedAt.getTime() - window.ageMs;
-
-      if (
-        tokenReferences[window.key] === undefined &&
-        snapshot.capturedAt.getTime() <= cutoff
-      ) {
-        tokenReferences[window.key] = snapshot.price;
-      }
-    }
-
-    references.set(snapshot.tokenMint, tokenReferences);
+  for (const row of referenceRows.flat()) {
+    const tokenReferences = references.get(row.tokenMint) ?? {};
+    tokenReferences[row.windowKey] = row.price;
+    references.set(row.tokenMint, tokenReferences);
   }
 
   return references;
@@ -188,6 +194,161 @@ const getFallbackQuoteTargets = (
     .sort((a, b) => b.priorityScore - a.priorityScore)
     .slice(0, fallbackQuoteLimit)
     .map((item) => item.launch);
+
+const getPoolStateScore = (launch: BagsLaunchView) => {
+  if (launch.migrationStatus === "migrated") {
+    return 14;
+  }
+
+  if (launch.migrationStatus === "dbc") {
+    return 9;
+  }
+
+  return 3;
+};
+
+const getSparkline = (score: number, rank: number) => {
+  const start = Math.max(score - 8 - rank, 1);
+
+  return Array.from({ length: 12 }, (_, index) =>
+    Number((start + index * 0.7 + ((index + rank) % 3) * 0.45).toFixed(2)),
+  );
+};
+
+const getLeaderboardLabel = (launch: BagsLaunchView) =>
+  launch.migrationStatus === "migrated"
+    ? "Migrated pool"
+    : launch.migrationStatus === "dbc"
+      ? "Live DBC"
+      : "Fresh launch";
+
+const getTrendingMetric = (entry: SyncLeaderboardEntry) => {
+  const change24h = entry.latestSnapshot.priceChange24h;
+
+  if (change24h !== null && change24h !== undefined) {
+    return `${change24h >= 0 ? "+" : ""}${change24h.toFixed(1)}%`;
+  }
+
+  const marketCap = entry.latestSnapshot.marketCap;
+
+  if (marketCap !== null && marketCap !== undefined) {
+    return `$${marketCap.toLocaleString(undefined, {
+      maximumFractionDigits: 0,
+    })}`;
+  }
+
+  return "N/A";
+};
+
+const toMarketLeaderboardRow = (
+  kind: string,
+  entry: SyncLeaderboardEntry,
+  rank: number,
+  metric: string,
+): Prisma.MarketLeaderboardEntryCreateManyInput => ({
+  kind,
+  rank,
+  name: entry.launch.name,
+  symbol: entry.launch.symbol,
+  image: entry.launch.image,
+  tokenMint: entry.launch.tokenMint,
+  metric,
+  score: entry.latestSignal,
+  price: entry.latestSnapshot.price ?? null,
+  marketCap: entry.latestSnapshot.marketCap ?? null,
+  volume24h: entry.latestSnapshot.volume24h ?? null,
+  change1h: entry.latestSnapshot.priceChange1h ?? null,
+  change24h: entry.latestSnapshot.priceChange24h ?? null,
+  change7d: null,
+  sparkline: toJson(getSparkline(entry.latestSignal, rank)),
+  label: getLeaderboardLabel(entry.launch),
+  href: `/coins/${encodeURIComponent(entry.launch.tokenMint)}`,
+  source: "bags",
+});
+
+const refreshMarketLeaderboardCache = async (
+  prisma: PrismaClient,
+  launches: BagsLaunchView[],
+  snapshotRows: SnapshotRow[],
+) => {
+  const snapshotsByMint = new Map(
+    snapshotRows.map((snapshot) => [snapshot.tokenMint, snapshot]),
+  );
+  const entries = launches
+    .map((launch, index): SyncLeaderboardEntry | null => {
+      const latestSnapshot = snapshotsByMint.get(launch.tokenMint);
+
+      if (!latestSnapshot) {
+        return null;
+      }
+
+      const latestSignal =
+        latestSnapshot.marketSignal ?? getMarketSignal(launch, index);
+      const recencyScore = Math.max(12 - index * 0.002, 0);
+      const trendScore = Number(
+        (latestSignal + getPoolStateScore(launch) + recencyScore).toFixed(2),
+      );
+
+      return {
+        launch,
+        latestSignal,
+        latestSnapshot,
+        trendScore,
+      };
+    })
+    .filter((entry): entry is SyncLeaderboardEntry => entry !== null);
+  const launchFeedEntries = entries.filter(
+    (entry) => entry.launch.status !== "POOL_ONLY",
+  );
+  const marketRows = rankMarketCapLeaderboard(entries).map((entry, index) =>
+    toMarketLeaderboardRow(
+      "market",
+      entry,
+      index + 1,
+      entry.latestSnapshot.marketCap === null ||
+        entry.latestSnapshot.marketCap === undefined
+        ? "N/A"
+        : `$${entry.latestSnapshot.marketCap.toLocaleString(undefined, {
+            maximumFractionDigits: 0,
+          })}`,
+    ),
+  );
+  const trendingRows = rankTrendingTokens(launchFeedEntries)
+    .slice(0, cachedLeaderboardSideListLimit)
+    .map((entry, index) =>
+      toMarketLeaderboardRow(
+        "trending",
+        entry,
+        index + 1,
+        getTrendingMetric(entry),
+      ),
+    );
+  const topGainerRows = rankTopGainers(launchFeedEntries)
+    .slice(0, cachedLeaderboardSideListLimit)
+    .map((entry, index) =>
+      toMarketLeaderboardRow(
+        "top_gainers",
+        entry,
+        index + 1,
+        `${entry.latestSnapshot.priceChange24h?.toFixed(1) ?? "N/A"}%`,
+      ),
+    );
+  const rows = [...marketRows, ...trendingRows, ...topGainerRows];
+
+  await prisma.$transaction(async (tx) => {
+    await tx.marketLeaderboardEntry.deleteMany();
+
+    for (const rowChunk of chunk(rows, 1000)) {
+      if (rowChunk.length > 0) {
+        await tx.marketLeaderboardEntry.createMany({
+          data: rowChunk,
+        });
+      }
+    }
+  });
+
+  return rows.length;
+};
 
 const parseFmpPublishedDate = (value: string) => {
   const date = new Date(`${value.replace(" ", "T")}Z`);
@@ -518,12 +679,12 @@ export const syncBagsMarket = async (
         priceChange1h,
         priceChange6h: null,
         priceChange24h,
-        volume24h: dexMarketData?.volume24h,
-        liquidityUsd: dexMarketData?.liquidityUsd,
-        dexPairAddress: dexMarketData?.dexPairAddress,
-        dexTokenName: dexMarketData?.name,
-        dexTokenSymbol: dexMarketData?.symbol,
-        dexImage: dexMarketData?.image,
+        volume24h: dexMarketData?.volume24h ?? null,
+        liquidityUsd: dexMarketData?.liquidityUsd ?? null,
+        dexPairAddress: dexMarketData?.dexPairAddress ?? null,
+        dexTokenName: dexMarketData?.name ?? null,
+        dexTokenSymbol: dexMarketData?.symbol ?? null,
+        dexImage: dexMarketData?.image ?? null,
         marketDataSource: dexMarketData
           ? "dexscreener"
           : price
@@ -539,6 +700,11 @@ export const syncBagsMarket = async (
       data: snapshotRows,
     });
     rowsWritten += enrichedLaunches.length;
+    rowsWritten += await refreshMarketLeaderboardCache(
+      prisma,
+      enrichedLaunches,
+      snapshotRows,
+    );
 
     for (const newsChunk of chunk(launches.slice(0, 100), 25)) {
       await Promise.all(

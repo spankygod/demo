@@ -80,7 +80,14 @@ export const getDexScreenerMarketData = async (
     return marketData;
   }
 
-  const payload: unknown = await response.json();
+  let payload: unknown;
+
+  try {
+    payload = await response.json();
+  } catch {
+    return marketData;
+  }
+
   const pairs = Array.isArray(payload)
     ? payload.map(parsePair).filter((pair): pair is DexPair => pair !== null)
     : [];

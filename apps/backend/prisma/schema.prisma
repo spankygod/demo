@@ -27,6 +27,7 @@ model BagsToken {
 
   pool      BagsPool?
   creators  TokenCreator[]
+  leaderboardEntries MarketLeaderboardEntry[]
   snapshots TokenMarketSnapshot[]
 
   @@index([symbol])
@@ -69,6 +70,37 @@ model TokenCreator {
 
   @@index([tokenMint])
   @@unique([tokenMint, wallet])
+}
+
+model MarketLeaderboardEntry {
+  id         String   @id @default(cuid())
+  kind       String
+  rank       Int
+  tokenMint  String
+  name       String
+  symbol     String
+  image      String?
+  metric     String
+  score      Float
+  price      Float?
+  marketCap  Float?
+  volume24h  Float?
+  change1h   Float?
+  change24h  Float?
+  change7d   Float?
+  sparkline  Json
+  label      String
+  href       String
+  source     String   @default("bags")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  token BagsToken @relation(fields: [tokenMint], references: [tokenMint], onDelete: Cascade)
+
+  @@unique([kind, rank])
+  @@unique([kind, tokenMint])
+  @@index([kind, rank])
+  @@index([tokenMint])
 }
 
 model TokenMarketSnapshot {

@@ -50,7 +50,14 @@ export const getTokenSupply = async (tokenMint: string) => {
     return null;
   }
 
-  const payload: unknown = await response.json();
+  let payload: unknown;
+
+  try {
+    payload = await response.json();
+  } catch {
+    return null;
+  }
+
   const parsed = tokenSupplyResponseSchema(payload);
 
   if (!parsed || !Number.isFinite(parsed.uiAmount)) {

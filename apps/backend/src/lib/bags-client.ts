@@ -130,7 +130,14 @@ const request = async <T extends z.ZodTypeAny>(
     },
   });
 
-  const payload: unknown = await response.json();
+  let payload: unknown;
+
+  try {
+    payload = await response.json();
+  } catch {
+    throw new BagsApiError("Bags API returned a non-JSON response", response.status);
+  }
+
   const baseResponse = z
     .object({ success: z.boolean() })
     .passthrough()
