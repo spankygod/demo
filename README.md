@@ -35,7 +35,7 @@ The web app is designed to feel familiar to anyone who has used market discovery
 Key screens:
 
 - **Market leaderboard**: scan token rank, price, movement, volume, market cap, and recent trend in one row.
-- **Highlights**: quickly identify trending Bags tokens and top gainers.
+- **Highlights and filters**: quickly identify trending Bags tokens, top gainers, and lifetime creator-fee leaders.
 - **Latest signals**: separate launch-feed activity from broader market news.
 - **Coin detail**: inspect token price history, pool data, route/source details, creator info, and derived Bags market signal.
 
