@@ -13,6 +13,7 @@ import {
   type CachedLeaderboardRow,
   type TokenWithLeaderboard,
 } from "./shared";
+import { withTopEarnerAmounts } from "./top-earners";
 
 type TokenMarketHistoryPoint = {
   capturedAt: Date;
@@ -257,6 +258,7 @@ const toCachedLeaderboardItem = (row: CachedLeaderboardRow) => ({
   label: row.label,
   href: row.href,
   source: "bags" as const,
+  creator: row.token.creators.at(0) ?? null,
 });
 
 const getTrendingMetric = (entry: ReturnType<typeof buildLeaderboardEntry>) => {
@@ -341,12 +343,16 @@ export const getCachedLeaderboards = async (
   ]);
 
   if (leaderboardTotal > 0) {
+    const topEarners = await withTopEarnerAmounts(
+      topEarnerRows.map(toCachedLeaderboardItem),
+    );
+
     return {
       leaderboard: leaderboardRows.map(toCachedLeaderboardItem),
       leaderboardTotal,
       trending: trendingRows.map(toCachedLeaderboardItem),
       topGainers: topGainerRows.map(toCachedLeaderboardItem),
-      topEarners: topEarnerRows.map(toCachedLeaderboardItem),
+      topEarners,
     };
   }
 

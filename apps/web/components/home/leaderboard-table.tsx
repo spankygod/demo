@@ -15,6 +15,7 @@ import type {
   BagsTableRow,
 } from "@/lib/home-market-mappers";
 
+import { CreatorCell } from "./creator-cell";
 import { ChangeText } from "./market-text";
 import { Sparkline } from "./sparkline";
 
@@ -35,8 +36,9 @@ const topEarnersColumns = [
   { label: " ", className: "w-11 px-3" },
   { label: "#", className: "w-14 px-3 text-left" },
   { label: "Token", className: "min-w-[280px] px-3 text-left" },
-  { label: "Lifetime Fees", className: "w-44 px-3 text-center" },
-  { label: "Amount SOL to USDC", className: "w-52 px-3 text-center" },
+  { label: "Creator", className: "w-48 px-3 text-left" },
+  { label: "Creator Earning", className: "w-44 px-3 text-center" },
+  { label: "Amount", className: "w-52 px-3 text-center" },
 ];
 
 const getPaginationItems = (page: number, totalPages: number) => {
@@ -182,7 +184,7 @@ export function LeaderboardTable({
       <Table
         className={
           isTopEarners
-            ? "min-w-[760px] table-fixed"
+            ? "min-w-[940px] table-fixed"
             : "min-w-[1190px] table-fixed"
         }
       >
@@ -191,6 +193,7 @@ export function LeaderboardTable({
             <col className="w-11" />
             <col className="w-14" />
             <col />
+            <col className="w-48" />
             <col className="w-44" />
             <col className="w-52" />
           </colgroup>
@@ -273,11 +276,14 @@ export function LeaderboardTable({
                 </TableCell>
                 {isTopEarners ? (
                   <>
+                    <TableCell className="w-48 px-3">
+                      <CreatorCell token={token} />
+                    </TableCell>
                     <TableCell className="w-44 px-3 text-center font-mono tabular-nums text-zinc-50">
                       {token.lifetimeFees}
                     </TableCell>
                     <TableCell className="w-52 px-3 text-center font-mono tabular-nums text-zinc-50">
-                      {token.solToUsdcAmount}
+                      {token.amount}
                     </TableCell>
                   </>
                 ) : (

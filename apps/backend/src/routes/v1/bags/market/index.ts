@@ -17,6 +17,19 @@ import {
 } from "../../../../lib/bags-market";
 import { withRedisCache } from "../../../../lib/redis-cache";
 
+const creatorSchema = z.object({
+  username: z.string().nullable().optional(),
+  pfp: z.string().nullable().optional(),
+  royaltyBps: z.number().nullable().optional(),
+  isCreator: z.boolean().nullable().optional(),
+  wallet: z.string().nullable().optional(),
+  provider: z.string().nullable().optional(),
+  providerUsername: z.string().nullable().optional(),
+  twitterUsername: z.string().nullable().optional(),
+  bagsUsername: z.string().nullable().optional(),
+  isAdmin: z.boolean().nullable().optional(),
+});
+
 const marketItemSchema = z.object({
   rank: z.number(),
   name: z.string(),
@@ -27,6 +40,7 @@ const marketItemSchema = z.object({
   score: z.number(),
   price: z.number().nullable(),
   marketCap: z.number().nullable(),
+  amountUsdc: z.number().nullable().optional(),
   volume24h: z.number().nullable(),
   change1h: z.number().nullable(),
   change24h: z.number().nullable(),
@@ -35,6 +49,7 @@ const marketItemSchema = z.object({
   label: z.string(),
   href: z.string(),
   source: z.literal("bags"),
+  creator: creatorSchema.nullable().optional(),
 });
 
 const newsItemSchema = z.object({
@@ -136,6 +151,7 @@ const toMarketItem = (
     score,
     price: null,
     marketCap: null,
+    amountUsdc: null,
     volume24h: null,
     change1h: null,
     change24h: null,
@@ -151,6 +167,7 @@ const toMarketItem = (
           : "Fresh launch",
     href: `/coins/${encodeURIComponent(launch.tokenMint)}`,
     source: "bags" as const,
+    creator: null,
   };
 };
 
@@ -162,6 +179,7 @@ const bagsMarketRoute: FastifyPluginAsync = async (fastify) => {
         querystring: z.object({
           limit: z.coerce.number().int().min(1).max(100).default(25),
           page: z.coerce.number().int().min(1).default(1),
+          schema: z.string().optional(),
         }),
         response: {
           200: bagsMarketResponseSchema,
@@ -176,7 +194,7 @@ const bagsMarketRoute: FastifyPluginAsync = async (fastify) => {
         return await withRedisCache(
           fastify,
           {
-            key: `bags:market:v1:limit:${limit}:page:${page}`,
+            key: `bags:market:v2:limit:${limit}:page:${page}`,
             ttlSeconds: 60,
           },
           async () => {

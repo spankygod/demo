@@ -1,0 +1,42 @@
+name: Deploy Backend
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-backend
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy backend on VPS
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_PORT: ${{ secrets.VPS_PORT || '22' }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          APP_DIR: ${{ secrets.VPS_APP_DIR || '/opt/astralmarket' }}
+          SERVICE_NAME: ${{ secrets.VPS_BACKEND_SERVICE || 'astralmarket-backend' }}
+        run: |
+          set -euo pipefail
+
+          mkdir -p ~/.ssh
+          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/astralmarket_deploy_key
+          chmod 600 ~/.ssh/astralmarket_deploy_key
+          ssh-keyscan -p "$VPS_PORT" "$VPS_HOST" >> ~/.ssh/known_hosts
+
+          ssh -i ~/.ssh/astralmarket_deploy_key -p "$VPS_PORT" "$VPS_USER@$VPS_HOST" \
+            "APP_DIR='$APP_DIR' SERVICE_NAME='$SERVICE_NAME' bash -s" <<'EOF'
+          set -euo pipefail
+
+          cd "$APP_DIR"
+          git fetch origin main
+          git reset --hard origin/main
+          chmod +x scripts/deploy-backend.sh
+          scripts/deploy-backend.sh
+          EOF

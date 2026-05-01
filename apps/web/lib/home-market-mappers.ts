@@ -26,6 +26,7 @@ export type BagsTableRow = {
   name: string;
   symbol: string;
   image?: string | null;
+  creator?: BagsMarketItem["creator"];
   badge: string;
   price: string;
   h1: string;
@@ -33,7 +34,7 @@ export type BagsTableRow = {
   d7: string;
   lifetimeFees: string;
   marketCap: string;
-  solToUsdcAmount: string;
+  amount: string;
   volume24h: string;
   tokenMint: string;
   sparkline: number[];
@@ -81,8 +82,9 @@ export const parseLeaderboardCategory = (
   value: string | string[] | undefined,
 ): HomeLeaderboardCategory => {
   const rawValue = Array.isArray(value) ? value.at(0) : value;
+  const normalizedValue = rawValue?.replace(/^-+/u, "");
 
-  return rawValue === "top-earners" ? "top-earners" : "all";
+  return normalizedValue === "top-earners" ? "top-earners" : "all";
 };
 
 export const buildGlobalStats = (
@@ -117,6 +119,7 @@ export const mapLeaderboardToRows = (
       name: item.name,
       symbol: item.symbol,
       image: item.image,
+      creator: item.creator ?? null,
       badge: (item.symbol || item.name || "??").slice(0, 2).toUpperCase(),
       price: formatPrice(item.price),
       h1: formatPercent(item.change1h),
@@ -127,7 +130,7 @@ export const mapLeaderboardToRows = (
         options.metricColumn === "metric"
           ? item.metric
           : formatMarketCap(item.marketCap),
-      solToUsdcAmount: formatUsdcAmount(item.marketCap),
+      amount: formatUsdcAmount(item.amountUsdc),
       volume24h: formatMarketCap(item.volume24h),
       tokenMint: item.tokenMint,
       sparkline:

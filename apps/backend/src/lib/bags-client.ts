@@ -70,19 +70,19 @@ const bagsTradeQuoteSchema = z.object({
       inputMintDecimals: z.number(),
       outputMintDecimals: z.number(),
       marketKey: z.string(),
-      data: z.string(),
+      data: z.string().nullable().optional(),
     }),
   ),
   platformFee: z
     .object({
-      amount: z.string(),
-      feeBps: z.number(),
-      feeAccount: z.string(),
-      segmenterFeeAmount: z.string(),
-      segmenterFeePct: z.number(),
+      amount: z.string().nullable().optional(),
+      feeBps: z.number().nullable().optional(),
+      feeAccount: z.string().nullable().optional(),
+      segmenterFeeAmount: z.string().nullable().optional(),
+      segmenterFeePct: z.number().nullable().optional(),
     })
     .optional(),
-  outTransferFee: z.string().optional(),
+  outTransferFee: z.string().nullable().optional(),
   simulatedComputeUnits: z.number().optional(),
 });
 

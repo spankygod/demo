@@ -82,6 +82,22 @@ export const marketLeaderboardEntrySelect = {
   label: true,
   href: true,
   source: true,
+  token: {
+    select: {
+      creators: {
+        select: creatorSelect,
+        orderBy: [
+          {
+            isCreator: "desc",
+          },
+          {
+            createdAt: "asc",
+          },
+        ],
+        take: 1,
+      },
+    },
+  },
 } satisfies Prisma.MarketLeaderboardEntrySelect;
 
 export const tokenLeaderboardSelect = {

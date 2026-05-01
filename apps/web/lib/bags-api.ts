@@ -35,6 +35,7 @@ export type BagsMarketItem = {
   score: number;
   price?: number | null;
   marketCap?: number | null;
+  amountUsdc?: number | null;
   volume24h?: number | null;
   change1h?: number | null;
   change24h?: number | null;
@@ -43,6 +44,20 @@ export type BagsMarketItem = {
   label: string;
   href: string;
   source: "bags";
+  creator?: BagsCreator | null;
+};
+
+export type BagsCreator = {
+  username?: string | null;
+  pfp?: string | null;
+  royaltyBps?: number | null;
+  isCreator?: boolean | null;
+  wallet?: string | null;
+  provider?: string | null;
+  providerUsername?: string | null;
+  twitterUsername?: string | null;
+  bagsUsername?: string | null;
+  isAdmin?: boolean | null;
 };
 
 export type BagsMarketNewsItem = {
@@ -183,7 +198,7 @@ export const fetchBagsMarket = (
   const pageSize = options.pageSize ?? 25;
 
   return fetchBackend<BagsMarketData>(
-    `/v1/bags/market?limit=${pageSize}&page=${page}`,
+    `/v1/bags/market?limit=${pageSize}&page=${page}&schema=amount-v2`,
     {
       revalidate: 300,
       tags: ["bags-market"],
