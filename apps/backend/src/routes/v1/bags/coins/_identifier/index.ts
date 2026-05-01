@@ -34,6 +34,21 @@ const creatorSchema = z.object({
   isAdmin: z.boolean().nullable().optional(),
 });
 
+const leaderboardRankSchema = z.object({
+  kind: z.string(),
+  rank: z.number(),
+  label: z.string(),
+  metric: z.string(),
+});
+
+const coinNewsSchema = z.object({
+  headline: z.string(),
+  detail: z.string(),
+  href: z.string().nullable(),
+  source: z.string(),
+  createdAt: z.string(),
+});
+
 const coinDetailResponseSchema = z.object({
   success: z.literal(true),
   response: z.object({
@@ -74,6 +89,15 @@ const coinDetailResponseSchema = z.object({
       change1h: z.number().nullable().optional(),
       change6h: z.number().nullable().optional(),
       change24h: z.number().nullable().optional(),
+      volume24h: z.number().nullable().optional(),
+      liquidityUsd: z.number().nullable().optional(),
+      tokenSupply: z.string().nullable().optional(),
+      dexPairAddress: z.string().nullable().optional(),
+      dexTokenName: z.string().nullable().optional(),
+      dexTokenSymbol: z.string().nullable().optional(),
+      dexImage: z.string().nullable().optional(),
+      marketDataSource: z.string().nullable().optional(),
+      lastUpdatedAt: z.string().nullable().optional(),
     }),
     marketHistory: z.array(
       z.object({
@@ -81,8 +105,15 @@ const coinDetailResponseSchema = z.object({
         price: z.number().nullable(),
         marketCap: z.number().nullable(),
         marketSignal: z.number().nullable(),
+        priceChange1h: z.number().nullable(),
+        priceChange6h: z.number().nullable(),
+        priceChange24h: z.number().nullable(),
+        volume24h: z.number().nullable(),
+        liquidityUsd: z.number().nullable(),
       }),
     ),
+    leaderboardRanks: z.array(leaderboardRankSchema),
+    news: z.array(coinNewsSchema),
     quoteMint: z.string(),
   }),
 });
@@ -109,6 +140,38 @@ const coinDetailRoute: FastifyPluginAsync = async (fastify) => {
         if (cachedToken) {
           const { creators, latestSnapshot, launch } =
             tokenWithDetailsToResponse(cachedToken);
+          const [leaderboardRanks, news] = await Promise.all([
+            fastify.prisma.marketLeaderboardEntry.findMany({
+              where: {
+                tokenMint: launch.tokenMint,
+              },
+              orderBy: {
+                rank: "asc",
+              },
+              select: {
+                kind: true,
+                rank: true,
+                label: true,
+                metric: true,
+              },
+            }),
+            fastify.prisma.marketNews.findMany({
+              where: {
+                tokenMint: launch.tokenMint,
+              },
+              orderBy: {
+                createdAt: "desc",
+              },
+              take: 6,
+              select: {
+                headline: true,
+                detail: true,
+                href: true,
+                source: true,
+                createdAt: true,
+              },
+            }),
+          ]);
           const marketHistory = cachedToken.snapshots
             .slice()
             .reverse()
@@ -117,6 +180,11 @@ const coinDetailRoute: FastifyPluginAsync = async (fastify) => {
               price: snapshot.price ?? null,
               marketCap: snapshot.marketCap ?? null,
               marketSignal: snapshot.marketSignal ?? null,
+              priceChange1h: snapshot.priceChange1h ?? null,
+              priceChange6h: snapshot.priceChange6h ?? null,
+              priceChange24h: snapshot.priceChange24h ?? null,
+              volume24h: snapshot.volume24h ?? null,
+              liquidityUsd: snapshot.liquidityUsd ?? null,
             }));
 
           return {
@@ -152,10 +220,24 @@ const coinDetailRoute: FastifyPluginAsync = async (fastify) => {
                 price: latestSnapshot?.price ?? null,
                 marketCap: latestSnapshot?.marketCap ?? null,
                 change1h: latestSnapshot?.priceChange1h ?? null,
-                change6h: null,
+                change6h: latestSnapshot?.priceChange6h ?? null,
                 change24h: latestSnapshot?.priceChange24h ?? null,
+                volume24h: latestSnapshot?.volume24h ?? null,
+                liquidityUsd: latestSnapshot?.liquidityUsd ?? null,
+                tokenSupply: latestSnapshot?.tokenSupply ?? null,
+                dexPairAddress: latestSnapshot?.dexPairAddress ?? null,
+                dexTokenName: latestSnapshot?.dexTokenName ?? null,
+                dexTokenSymbol: latestSnapshot?.dexTokenSymbol ?? null,
+                dexImage: latestSnapshot?.dexImage ?? null,
+                marketDataSource: latestSnapshot?.marketDataSource ?? null,
+                lastUpdatedAt: latestSnapshot?.capturedAt.toISOString() ?? null,
               },
               marketHistory,
+              leaderboardRanks,
+              news: news.map((item) => ({
+                ...item,
+                createdAt: item.createdAt.toISOString(),
+              })),
               quoteMint: env.priceQuoteMint,
             },
           };
@@ -274,8 +356,21 @@ const coinDetailRoute: FastifyPluginAsync = async (fastify) => {
               price,
               marketCap,
               change1h: dexMarketData?.priceChange1h ?? null,
-              change6h: null,
+              change6h: dexMarketData?.priceChange6h ?? null,
               change24h: dexMarketData?.priceChange24h ?? null,
+              volume24h: dexMarketData?.volume24h ?? null,
+              liquidityUsd: dexMarketData?.liquidityUsd ?? null,
+              tokenSupply: supply?.uiAmountString ?? null,
+              dexPairAddress: dexMarketData?.dexPairAddress ?? null,
+              dexTokenName: dexMarketData?.name ?? null,
+              dexTokenSymbol: dexMarketData?.symbol ?? null,
+              dexImage: dexMarketData?.image ?? null,
+              marketDataSource: dexMarketData
+                ? "dexscreener"
+                : price
+                  ? "bags_quote"
+                  : null,
+              lastUpdatedAt: snapshot.capturedAt.toISOString(),
             },
             marketHistory: [
               {
@@ -283,8 +378,15 @@ const coinDetailRoute: FastifyPluginAsync = async (fastify) => {
                 price,
                 marketCap,
                 marketSignal,
+                priceChange1h: dexMarketData?.priceChange1h ?? null,
+                priceChange6h: dexMarketData?.priceChange6h ?? null,
+                priceChange24h: dexMarketData?.priceChange24h ?? null,
+                volume24h: dexMarketData?.volume24h ?? null,
+                liquidityUsd: dexMarketData?.liquidityUsd ?? null,
               },
             ],
+            leaderboardRanks: [],
+            news: [],
             quoteMint: env.priceQuoteMint,
           },
         };

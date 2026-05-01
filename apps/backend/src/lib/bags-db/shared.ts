@@ -55,7 +55,16 @@ export const detailSnapshotSelect = {
   marketCap: true,
   marketSignal: true,
   priceChange1h: true,
+  priceChange6h: true,
   priceChange24h: true,
+  volume24h: true,
+  liquidityUsd: true,
+  tokenSupply: true,
+  dexPairAddress: true,
+  dexTokenName: true,
+  dexTokenSymbol: true,
+  dexImage: true,
+  marketDataSource: true,
   lifetimeFeesLamports: true,
 } satisfies Prisma.TokenMarketSnapshotSelect;
 

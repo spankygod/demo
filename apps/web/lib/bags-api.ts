@@ -136,12 +136,39 @@ export type BagsCoinDetailData = {
     change1h?: number | null;
     change6h?: number | null;
     change24h?: number | null;
+    volume24h?: number | null;
+    liquidityUsd?: number | null;
+    tokenSupply?: string | null;
+    dexPairAddress?: string | null;
+    dexTokenName?: string | null;
+    dexTokenSymbol?: string | null;
+    dexImage?: string | null;
+    marketDataSource?: string | null;
+    lastUpdatedAt?: string | null;
   };
   marketHistory: Array<{
     capturedAt: string;
     price: number | null;
     marketCap: number | null;
     marketSignal: number | null;
+    priceChange1h: number | null;
+    priceChange6h: number | null;
+    priceChange24h: number | null;
+    volume24h: number | null;
+    liquidityUsd: number | null;
+  }>;
+  leaderboardRanks?: Array<{
+    kind: string;
+    rank: number;
+    label: string;
+    metric: string;
+  }>;
+  news?: Array<{
+    headline: string;
+    detail: string;
+    href: string | null;
+    source: string;
+    createdAt: string;
   }>;
   quoteMint: string;
 };
