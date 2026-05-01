@@ -41,12 +41,16 @@ export function MarketChart({ coin }: { coin: BagsCoinDetailData }) {
   const plotTop = 34;
   const plotHeight = 420;
   const plotBottom = plotTop + plotHeight;
+  const axisGutter = 72;
+  const plotLeft = 0;
+  const plotRight = width - axisGutter;
+  const plotWidth = plotRight - plotLeft;
   const min = Math.min(...points);
   const max = Math.max(...points);
   const span = Math.max(max - min, Number.EPSILON);
   const stroke = series.negative ? "#ff3b30" : "#22c55e";
   const coordinates = points.map((point, index) => {
-    const x = (index / Math.max(points.length - 1, 1)) * width;
+    const x = plotLeft + (index / Math.max(points.length - 1, 1)) * plotWidth;
     const y = plotBottom - ((point - min) / span) * plotHeight;
 
     return [x, y] as const;
@@ -56,8 +60,10 @@ export function MarketChart({ coin }: { coin: BagsCoinDetailData }) {
   const volumeBars = points.map((point, index) => {
     const normalized = (point - min) / span;
     const height = 12 + normalized * barMaxHeight * 0.7 + (index % 5) * 1.5;
-    const barWidth = Math.max(width / Math.max(points.length, 1) - 2, 1.5);
-    const x = (index / Math.max(points.length - 1, 1)) * (width - barWidth);
+    const barWidth = Math.max(plotWidth / Math.max(points.length, 1) - 2, 1.5);
+    const x =
+      plotLeft +
+      (index / Math.max(points.length - 1, 1)) * (plotWidth - barWidth);
 
     return {
       height: Math.min(height, barMaxHeight),
@@ -71,7 +77,7 @@ export function MarketChart({ coin }: { coin: BagsCoinDetailData }) {
         `${index === 0 ? "M" : "L"} ${x.toFixed(2)} ${y.toFixed(2)}`,
     )
     .join(" ");
-  const areaPath = `${linePath} L ${width} ${plotBottom} L 0 ${plotBottom} Z`;
+  const areaPath = `${linePath} L ${plotRight} ${plotBottom} L ${plotLeft} ${plotBottom} Z`;
   const labelIndexes = [
     ...new Set([
       0,
@@ -199,16 +205,16 @@ export function MarketChart({ coin }: { coin: BagsCoinDetailData }) {
                 <line
                   stroke="#17212b"
                   strokeWidth="1"
-                  x1="0"
-                  x2={width}
+                  x1={plotLeft}
+                  x2={plotRight}
                   y1={y}
                   y2={y}
                 />
                 <text
                   fill="#64748b"
                   fontSize="12"
-                  textAnchor="end"
-                  x={width - 6}
+                  textAnchor="start"
+                  x={plotRight + 8}
                   y={y - 7}
                 >
                   {series.formatValue(value)}
@@ -257,7 +263,11 @@ export function MarketChart({ coin }: { coin: BagsCoinDetailData }) {
                       ? "end"
                       : "middle"
                 }
-                x={(pointIndex / Math.max(series.points.length - 1, 1)) * width}
+                x={
+                  plotLeft +
+                  (pointIndex / Math.max(series.points.length - 1, 1)) *
+                    plotWidth
+                }
                 y={height - 14}
               >
                 {series.points[pointIndex]?.label}
