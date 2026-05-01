@@ -54,6 +54,32 @@ export const formatLamports = (value: string | null) => {
   })} SOL`;
 };
 
+export const formatTokenSupply = (value?: string | null) => {
+  if (!value) {
+    return "-";
+  }
+
+  const supply = Number(value);
+
+  if (!Number.isFinite(supply)) {
+    return value;
+  }
+
+  return supply.toLocaleString(undefined, {
+    maximumFractionDigits: supply >= 1_000 ? 0 : 4,
+  });
+};
+
+export const formatMarketSource = (value?: string | null) => {
+  if (!value) {
+    return "-";
+  }
+
+  return value
+    .replace(/_/gu, " ")
+    .replace(/\b\w/gu, (letter) => letter.toUpperCase());
+};
+
 export const formatStatus = (value: string) =>
   value
     .toLowerCase()
@@ -104,7 +130,11 @@ export const getQuoteSummary = (quote: BagsCoinDetailData["quote"]) => {
   };
 };
 
-const formatChartDate = (value: string) => {
+export const formatSnapshotDate = (value?: string | null) => {
+  if (!value) {
+    return "-";
+  }
+
   const date = new Date(value);
 
   if (Number.isNaN(date.getTime())) {
@@ -121,7 +151,7 @@ const formatChartDate = (value: string) => {
 
 const maxDetailChartPoints = 180;
 
-const downsampleChartPoints = <T,>(
+const downsampleChartPoints = <T>(
   points: T[],
   maxPoints = maxDetailChartPoints,
 ) => {
@@ -180,7 +210,7 @@ export const buildChartSeries = (coin: BagsCoinDetailData) => {
   const pricePoints = coin.marketHistory
     .filter((snapshot) => snapshot.price !== null)
     .map((snapshot) => ({
-      label: formatChartDate(snapshot.capturedAt),
+      label: formatSnapshotDate(snapshot.capturedAt),
       value: snapshot.price as number,
     }));
 
@@ -202,7 +232,7 @@ export const buildChartSeries = (coin: BagsCoinDetailData) => {
   const signalPoints = coin.marketHistory
     .filter((snapshot) => snapshot.marketSignal !== null)
     .map((snapshot) => ({
-      label: formatChartDate(snapshot.capturedAt),
+      label: formatSnapshotDate(snapshot.capturedAt),
       value: snapshot.marketSignal as number,
     }));
 

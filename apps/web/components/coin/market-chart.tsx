@@ -1,19 +1,45 @@
-import { ChartCandlestick, Layers3, Shield } from "lucide-react";
+import {
+  ChevronDown,
+  ChartCandlestick,
+  EllipsisVertical,
+  Layers3,
+  Shield,
+  Trophy,
+} from "lucide-react";
 
-import { Badge } from "@/components/ui/badge";
 import type { BagsCoinDetailData } from "@/lib/bags-api";
-import { buildChartSeries, shortenKey } from "@/lib/coin-detail-mappers";
-import { formatMarketCap } from "@/lib/market-format";
+import {
+  buildChartSeries,
+  formatMarketSource,
+  formatSnapshotDate,
+  formatTokenSupply,
+  shortenKey,
+} from "@/lib/coin-detail-mappers";
+import { formatMarketCap, formatPercent } from "@/lib/market-format";
 
 import { StatRow } from "./stat-row";
+
+const rankLabels: Record<string, string> = {
+  market: "Market",
+  top_earners: "Top earner",
+  top_gainers: "Top gainer",
+  trending: "Trending",
+};
+
+const formatRankKind = (kind: string) =>
+  rankLabels[kind] ??
+  kind.replace(/_/gu, " ").replace(/\b\w/gu, (letter) => letter.toUpperCase());
+
+const getDexPairUrl = (pairAddress?: string | null) =>
+  pairAddress ? `https://dexscreener.com/solana/${pairAddress}` : null;
 
 export function MarketChart({ coin }: { coin: BagsCoinDetailData }) {
   const series = buildChartSeries(coin);
   const points = series.points.map((point) => point.value);
   const width = 980;
-  const height = 420;
-  const plotTop = 18;
-  const plotHeight = 330;
+  const height = 565;
+  const plotTop = 34;
+  const plotHeight = 420;
   const plotBottom = plotTop + plotHeight;
   const min = Math.min(...points);
   const max = Math.max(...points);
@@ -24,6 +50,20 @@ export function MarketChart({ coin }: { coin: BagsCoinDetailData }) {
     const y = plotBottom - ((point - min) / span) * plotHeight;
 
     return [x, y] as const;
+  });
+  const barBottom = 535;
+  const barMaxHeight = 58;
+  const volumeBars = points.map((point, index) => {
+    const normalized = (point - min) / span;
+    const height = 12 + normalized * barMaxHeight * 0.7 + (index % 5) * 1.5;
+    const barWidth = Math.max(width / Math.max(points.length, 1) - 2, 1.5);
+    const x = (index / Math.max(points.length - 1, 1)) * (width - barWidth);
+
+    return {
+      height: Math.min(height, barMaxHeight),
+      width: barWidth,
+      x,
+    };
   });
   const linePath = coordinates
     .map(
@@ -45,44 +85,82 @@ export function MarketChart({ coin }: { coin: BagsCoinDetailData }) {
 
     return { value, y };
   });
-  const currentValue = points.at(-1);
+  const leaderboardRanks = coin.leaderboardRanks ?? [];
+  const dexPairUrl = getDexPairUrl(coin.market.dexPairAddress);
+  const marketStats = [
+    ["Market Cap", formatMarketCap(coin.market.marketCap)],
+    ["24h Volume", formatMarketCap(coin.market.volume24h)],
+    ["Liquidity", formatMarketCap(coin.market.liquidityUsd)],
+    ["Supply", formatTokenSupply(coin.market.tokenSupply)],
+    ["Source", formatMarketSource(coin.market.marketDataSource)],
+    ["Updated", formatSnapshotDate(coin.market.lastUpdatedAt)],
+  ];
+  const performance = [
+    { label: "1h", value: coin.market.change1h },
+    { label: "6h", value: coin.market.change6h },
+    { label: "24h", value: coin.market.change24h },
+    { label: "Cached", display: series.changeLabel },
+  ];
 
   return (
     <section className="min-w-0 px-6 py-8 lg:px-7">
-      <div className="flex flex-col gap-5 border-b border-[#1a1a1a] pb-4 xl:flex-row xl:items-end xl:justify-between">
-        <div>
-          <div className="flex flex-wrap items-center gap-2 text-sm font-semibold text-slate-400">
-            {[
-              "Overview",
-              "Markets",
-              "News",
-              "Similar Coins",
-              "Historical Data",
-            ].map((item, index) => (
-              <button
-                className={
-                  index === 0
-                    ? "border-b-2 border-white pb-3 text-white"
-                    : "cursor-not-allowed pb-3 text-slate-600"
-                }
-                disabled={index !== 0}
-                key={item}
-                title={
-                  index === 0 ? undefined : "This tab is not available yet"
-                }
-              >
-                {item}
-              </button>
-            ))}
-          </div>
+      <div className="border-b border-[#1a1a1a]">
+        <div className="flex flex-wrap items-center gap-8 text-sm font-semibold text-slate-400">
+          {[
+            "Overview",
+            "Markets",
+            "News",
+            "Similar Coins",
+            "Historical Data",
+          ].map((item, index) => (
+            <button
+              className={
+                index === 0
+                  ? "border-b-2 border-green-400 pb-4 text-white"
+                  : "cursor-not-allowed pb-4 text-slate-500"
+              }
+              disabled={index !== 0}
+              key={item}
+              title={index === 0 ? undefined : "This tab is not available yet"}
+            >
+              {item}
+            </button>
+          ))}
         </div>
+      </div>
+
+      <div className="mt-4 flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
         <div className="flex flex-wrap gap-2">
-          {["1H", "24H", "7D", "30D", "1Y"].map((item) => (
+          {["Price", "Compare"].map((item) => (
+            <button
+              className="inline-flex h-9 items-center gap-2 rounded-lg bg-[#1f2937] px-4 text-sm font-bold text-zinc-100 hover:bg-[#263244]"
+              key={item}
+              type="button"
+            >
+              {item}
+              <ChevronDown className="size-4 text-slate-300" />
+            </button>
+          ))}
+          <button
+            className="grid size-9 place-items-center rounded-lg bg-[#111827] text-zinc-100 hover:bg-[#1f2937]"
+            type="button"
+          >
+            <ChartCandlestick className="size-4" />
+          </button>
+          <button
+            className="grid size-9 place-items-center rounded-lg bg-[#111827] text-xs font-black text-zinc-100 hover:bg-[#1f2937]"
+            type="button"
+          >
+            TV
+          </button>
+        </div>
+        <div className="flex flex-wrap items-center gap-1 rounded-xl bg-[#111827] p-1">
+          {["24H", "7D", "1M", "3M", "YTD", "1Y", "Max"].map((item) => (
             <button
               className={
                 item === "7D"
-                  ? "h-8 rounded-md bg-white px-3 text-xs font-bold text-black"
-                  : "h-8 cursor-not-allowed rounded-md px-3 text-xs font-bold text-slate-500"
+                  ? "h-8 rounded-lg bg-[#1f2937] px-3 text-xs font-bold text-white"
+                  : "h-8 cursor-not-allowed rounded-lg px-3 text-xs font-bold text-slate-400"
               }
               disabled={item !== "7D"}
               key={item}
@@ -92,42 +170,18 @@ export function MarketChart({ coin }: { coin: BagsCoinDetailData }) {
               {item}
             </button>
           ))}
+          <button
+            className="grid size-8 place-items-center rounded-lg text-slate-400"
+            disabled
+            type="button"
+          >
+            <EllipsisVertical className="size-4" />
+          </button>
         </div>
       </div>
 
-      <div className="mt-8 overflow-hidden rounded-lg border border-[#1a1a1a] bg-[#030303]">
-        <div className="grid gap-px border-b border-[#1a1a1a] bg-[#1a1a1a] md:grid-cols-4">
-          {[
-            ["Current", series.formatValue(currentValue)],
-            ["7d change", series.changeLabel],
-            ["Market cap", formatMarketCap(coin.market.marketCap)],
-            ["Snapshots", `${coin.marketHistory.length}`],
-          ].map(([label, value]) => (
-            <div className="bg-[#050505] px-4 py-3" key={label}>
-              <p className="text-xs font-semibold uppercase text-slate-500">
-                {label}
-              </p>
-              <p className="mt-1 font-mono text-sm font-semibold text-zinc-100">
-                {value}
-              </p>
-            </div>
-          ))}
-        </div>
-
-        <div className="flex flex-col gap-2 px-4 pt-4 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h2 className="flex items-center gap-2 text-base font-bold text-white">
-              <ChartCandlestick className="size-4 text-zinc-300" />
-              {coin.token.symbol || coin.token.name} {series.title}
-            </h2>
-            <p className="mt-1 text-xs text-slate-500">{series.sourceLabel}</p>
-          </div>
-          <Badge className="w-fit rounded-md border-[#2a2a2a] bg-transparent px-3 text-slate-300">
-            7 day window
-          </Badge>
-        </div>
-
-        <div className="px-3 pb-4 pt-2">
+      <div className="mt-5 bg-transparent">
+        <div className="px-0">
           <svg
             aria-label={`${coin.token.name} ${series.title.toLowerCase()} chart`}
             className="h-auto w-full"
@@ -143,8 +197,7 @@ export function MarketChart({ coin }: { coin: BagsCoinDetailData }) {
             {gridLines.map(({ value, y }) => (
               <g key={y}>
                 <line
-                  stroke="#1f2937"
-                  strokeDasharray="3 6"
+                  stroke="#17212b"
                   strokeWidth="1"
                   x1="0"
                   x2={width}
@@ -163,6 +216,17 @@ export function MarketChart({ coin }: { coin: BagsCoinDetailData }) {
               </g>
             ))}
             <path d={areaPath} fill="url(#coin-chart-fill)" />
+            {volumeBars.map((bar, index) => (
+              <rect
+                fill="#1e3a5f"
+                height={bar.height}
+                key={`${bar.x}-${index}`}
+                opacity="0.55"
+                width={bar.width}
+                x={bar.x}
+                y={barBottom - bar.height}
+              />
+            ))}
             <path
               d={linePath}
               fill="none"
@@ -209,6 +273,73 @@ export function MarketChart({ coin }: { coin: BagsCoinDetailData }) {
         </div>
       </div>
 
+      <section className="mt-5 grid overflow-hidden rounded-lg border border-[#1a1a1a] bg-[#1a1a1a] sm:grid-cols-4">
+        {performance.map((item) => {
+          const display = item.display ?? formatPercent(item.value);
+          const negative =
+            item.value !== undefined && item.value !== null
+              ? item.value < 0
+              : display.trim().startsWith("-");
+          const unavailable = display === "-";
+
+          return (
+            <div className="bg-[#050505] px-4 py-3" key={item.label}>
+              <p className="text-center text-xs font-bold text-slate-400">
+                {item.label}
+              </p>
+              <p
+                className={
+                  unavailable
+                    ? "mt-2 text-center font-mono text-sm font-semibold text-slate-500"
+                    : negative
+                      ? "mt-2 text-center font-mono text-sm font-semibold text-red-400"
+                      : "mt-2 text-center font-mono text-sm font-semibold text-green-400"
+                }
+              >
+                {display}
+              </p>
+            </div>
+          );
+        })}
+      </section>
+
+      <section className="mt-7 grid gap-px overflow-hidden rounded-lg border border-[#1a1a1a] bg-[#1a1a1a] sm:grid-cols-2 xl:grid-cols-3">
+        {marketStats.map(([label, value]) => (
+          <div className="bg-[#050505] px-4 py-4" key={label}>
+            <p className="text-xs font-semibold uppercase text-slate-500">
+              {label}
+            </p>
+            <p className="mt-2 break-words font-mono text-sm font-semibold text-zinc-100">
+              {value}
+            </p>
+          </div>
+        ))}
+      </section>
+
+      {leaderboardRanks.length > 0 ? (
+        <section className="mt-7 border border-[#1a1a1a] bg-[#050505] p-5">
+          <h2 className="flex items-center gap-2 font-semibold text-white">
+            <Trophy className="size-4 text-zinc-300" />
+            Market Ranks
+          </h2>
+          <div className="mt-4 grid gap-px overflow-hidden rounded-md border border-[#1a1a1a] bg-[#1a1a1a] md:grid-cols-2 xl:grid-cols-4">
+            {leaderboardRanks.map((rank) => (
+              <div className="bg-[#080808] p-4" key={rank.kind}>
+                <p className="text-xs font-semibold uppercase text-slate-500">
+                  {formatRankKind(rank.kind)}
+                </p>
+                <p className="mt-2 text-2xl font-bold text-white">
+                  #{rank.rank.toLocaleString()}
+                </p>
+                <p className="mt-1 truncate text-xs text-slate-400">
+                  {rank.metric}
+                </p>
+              </div>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
       <section className="mt-7 border-t border-[#1a1a1a] pt-6">
         <h2 className="text-xl font-bold text-white">
           About {coin.token.name}
@@ -223,9 +354,19 @@ export function MarketChart({ coin }: { coin: BagsCoinDetailData }) {
         <div className="border border-[#1a1a1a] bg-[#050505] p-5">
           <h2 className="flex items-center gap-2 font-semibold text-white">
             <Layers3 className="size-4 text-zinc-300" />
-            Pool and Route Data
+            Pool Data
           </h2>
           <div className="mt-4">
+            <StatRow
+              label="Pool State"
+              value={
+                coin.token.migrationStatus === "migrated"
+                  ? "Migrated DAMM v2"
+                  : coin.token.migrationStatus === "dbc"
+                    ? "Live DBC"
+                    : "Fresh launch"
+              }
+            />
             <StatRow
               label="DBC pool"
               value={shortenKey(coin.pool?.dbcPoolKey ?? coin.token.dbcPoolKey)}
@@ -244,21 +385,52 @@ export function MarketChart({ coin }: { coin: BagsCoinDetailData }) {
               label="Launch signature"
               value={shortenKey(coin.token.launchSignature)}
             />
+            <StatRow label="Quote mint" value={shortenKey(coin.quoteMint)} />
           </div>
         </div>
 
         <div className="border border-[#1a1a1a] bg-[#050505] p-5">
           <h2 className="flex items-center gap-2 font-semibold text-white">
             <Shield className="size-4 text-zinc-300" />
-            Source Data
+            Market Pair
           </h2>
           <div className="mt-4">
+            <StatRow
+              label="Dex token"
+              value={
+                coin.market.dexTokenSymbol ?? coin.market.dexTokenName ?? "-"
+              }
+            />
+            <StatRow
+              label="Pair"
+              value={
+                dexPairUrl ? (
+                  <a
+                    className="hover:text-white"
+                    href={dexPairUrl}
+                    rel="noreferrer"
+                    target="_blank"
+                  >
+                    {shortenKey(coin.market.dexPairAddress)}
+                  </a>
+                ) : (
+                  "-"
+                )
+              }
+            />
+            <StatRow
+              label="Liquidity"
+              value={formatMarketCap(coin.market.liquidityUsd)}
+            />
+            <StatRow
+              label="24h volume"
+              value={formatMarketCap(coin.market.volume24h)}
+            />
             <StatRow
               label="Token mint"
               value={shortenKey(coin.token.tokenMint)}
             />
             <StatRow label="Metadata URI" value={shortenKey(coin.token.uri)} />
-            <StatRow label="Quote mint" value={shortenKey(coin.quoteMint)} />
             <StatRow
               label="Market signal"
               value={`+${coin.marketSignal.value.toFixed(1)}%`}

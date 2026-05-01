@@ -3,11 +3,16 @@ import { BookOpen, Info, Sparkles, UserRound } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import type { BagsCoinDetailData } from "@/lib/bags-api";
-import { getPoolLabel, getQuoteSummary } from "@/lib/coin-detail-mappers";
+import {
+  formatSnapshotDate,
+  getPoolLabel,
+  getQuoteSummary,
+} from "@/lib/coin-detail-mappers";
 import { formatMarketCap } from "@/lib/market-format";
 
 export function InsightsRail({ coin }: { coin: BagsCoinDetailData }) {
   const quoteSummary = getQuoteSummary(coin.quote);
+  const news = coin.news ?? [];
   const creator =
     coin.creators.find((item) => item.isCreator) ?? coin.creators[0];
   const events = [
@@ -46,6 +51,33 @@ export function InsightsRail({ coin }: { coin: BagsCoinDetailData }) {
             market snapshots when available.
           </p>
         </section>
+
+        {news.length > 0 ? (
+          <>
+            <Separator className="my-5 bg-[#1a1a1a]" />
+
+            <section>
+              <h3 className="mb-4 text-sm font-bold text-slate-200">
+                Token Feed
+              </h3>
+              <div className="space-y-4">
+                {news.slice(0, 4).map((item) => (
+                  <article className="bg-[#080808] p-4" key={item.headline}>
+                    <p className="text-xs text-slate-500">
+                      {formatSnapshotDate(item.createdAt)} · {item.source}
+                    </p>
+                    <h4 className="mt-2 text-sm font-semibold leading-5 text-slate-200">
+                      {item.headline}
+                    </h4>
+                    <p className="mt-2 text-xs leading-5 text-slate-500">
+                      {item.detail}
+                    </p>
+                  </article>
+                ))}
+              </div>
+            </section>
+          </>
+        ) : null}
 
         <Separator className="my-5 bg-[#1a1a1a]" />
 

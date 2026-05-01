@@ -1,4 +1,11 @@
-import { ArrowLeft, ExternalLink, Globe, Link as LinkIcon } from "lucide-react";
+import {
+  ArrowLeft,
+  Bell,
+  ExternalLink,
+  Globe,
+  Link as LinkIcon,
+  Star,
+} from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 
@@ -7,6 +14,8 @@ import type { BagsCoinDetailData } from "@/lib/bags-api";
 import {
   coinActionClassName,
   formatLamports,
+  formatMarketSource,
+  formatTokenSupply,
   getCategories,
   getPoolLabel,
   getSafeExternalUrl,
@@ -16,11 +25,40 @@ import { formatMarketCap, formatPrice } from "@/lib/market-format";
 import { CoinChangeText } from "./coin-change-text";
 import { StatRow } from "./stat-row";
 
+const getPriceStats = (coin: BagsCoinDetailData) => {
+  const prices = coin.marketHistory
+    .map((snapshot) => snapshot.price)
+    .filter(
+      (price): price is number => price !== null && Number.isFinite(price),
+    );
+  const latestPrice = coin.market.price ?? prices.at(-1) ?? null;
+
+  if (prices.length === 0 || latestPrice === null) {
+    return {
+      high: null,
+      low: null,
+      position: 0,
+    };
+  }
+
+  const low = Math.min(...prices);
+  const high = Math.max(...prices);
+  const range = Math.max(high - low, Number.EPSILON);
+
+  return {
+    high,
+    low,
+    position: Math.min(Math.max(((latestPrice - low) / range) * 100, 0), 100),
+  };
+};
+
 export function CoinSummary({ coin }: { coin: BagsCoinDetailData }) {
   const categories = getCategories(coin);
   const bagsUrl = getSafeExternalUrl(coin.token.bagsUrl);
   const metadataUrl = getSafeExternalUrl(coin.token.uri);
   const websiteUrl = getSafeExternalUrl(coin.token.website);
+  const priceStats = getPriceStats(coin);
+  const ticker = coin.token.symbol || coin.token.name || "Token";
 
   return (
     <aside className="min-w-0 border-r border-[#1a1a1a] px-6 py-8 lg:sticky lg:top-0 lg:h-screen lg:overflow-y-auto lg:px-7">
@@ -82,6 +120,22 @@ export function CoinSummary({ coin }: { coin: BagsCoinDetailData }) {
         </p>
       </div>
 
+      <div className="mt-7">
+        <div className="flex items-center justify-between gap-3 font-mono text-xs font-semibold text-zinc-100">
+          <span>{formatPrice(priceStats.low)}</span>
+          <span className="font-sans text-slate-300">Cached Range</span>
+          <span>{formatPrice(priceStats.high)}</span>
+        </div>
+        <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-[#1f2937]">
+          <div
+            className="h-full rounded-full bg-green-400"
+            style={{
+              width: `${priceStats.position}%`,
+            }}
+          />
+        </div>
+      </div>
+
       <div className="mt-6 h-1.5 overflow-hidden rounded-full bg-[#1f2937]">
         <div
           className={
@@ -97,7 +151,7 @@ export function CoinSummary({ coin }: { coin: BagsCoinDetailData }) {
       <div className="mt-5 flex gap-2">
         {bagsUrl ? (
           <a
-            className={`${coinActionClassName} flex-1 bg-white text-black hover:bg-zinc-200`}
+            className={`${coinActionClassName} flex-1 border border-[#2a2a2a] bg-[#111111] text-white hover:bg-[#1f1f1f]`}
             href={bagsUrl}
             rel="noreferrer"
             target="_blank"
@@ -106,6 +160,23 @@ export function CoinSummary({ coin }: { coin: BagsCoinDetailData }) {
             <ExternalLink className="size-4" />
           </a>
         ) : null}
+        <button
+          className={`${coinActionClassName} flex-1 border border-[#334155] bg-transparent text-slate-200 hover:bg-[#111827] disabled:cursor-not-allowed disabled:opacity-60`}
+          disabled
+          title="Portfolio tracking is not available yet"
+          type="button"
+        >
+          <Star className="size-4" />
+          Portfolio
+        </button>
+        <button
+          className={`${coinActionClassName} size-9 border border-[#334155] bg-transparent p-0 text-slate-200 hover:bg-[#111827] disabled:cursor-not-allowed disabled:opacity-60`}
+          disabled
+          title="Alerts are not available yet"
+          type="button"
+        >
+          <Bell className="size-4" />
+        </button>
         {websiteUrl ? (
           <a
             className={`${coinActionClassName} border border-[#2a2a2a] bg-[#111111] text-zinc-100 hover:bg-[#181818]`}
@@ -124,12 +195,28 @@ export function CoinSummary({ coin }: { coin: BagsCoinDetailData }) {
           value={formatMarketCap(coin.market.marketCap)}
         />
         <StatRow
+          label="24h Volume"
+          value={formatMarketCap(coin.market.volume24h)}
+        />
+        <StatRow
+          label="Liquidity"
+          value={formatMarketCap(coin.market.liquidityUsd)}
+        />
+        <StatRow
           label="1h"
           value={<CoinChangeText value={coin.market.change1h} />}
         />
         <StatRow
+          label="6h"
+          value={<CoinChangeText value={coin.market.change6h} />}
+        />
+        <StatRow
           label="24h"
           value={<CoinChangeText value={coin.market.change24h} />}
+        />
+        <StatRow
+          label="Supply"
+          value={formatTokenSupply(coin.market.tokenSupply)}
         />
         <StatRow
           label="Lifetime Fees"
@@ -139,6 +226,46 @@ export function CoinSummary({ coin }: { coin: BagsCoinDetailData }) {
           label="Pool State"
           value={getPoolLabel(coin.token.migrationStatus)}
         />
+        <StatRow
+          label="Market Source"
+          value={formatMarketSource(coin.market.marketDataSource)}
+        />
+      </section>
+
+      <section className="mt-8">
+        <h2 className="text-lg font-bold text-white">{ticker} Converter</h2>
+        <div className="mt-4 overflow-hidden rounded-lg border border-[#334155] bg-[#050505]">
+          <div className="flex h-14 items-center justify-between border-b border-[#334155] px-3">
+            <span className="font-mono text-sm text-zinc-100">1</span>
+            <span className="text-sm font-semibold text-slate-400">
+              {ticker}
+            </span>
+          </div>
+          <div className="flex h-14 items-center justify-between px-3">
+            <span className="font-mono text-sm text-zinc-100">
+              {coin.market.price === null || coin.market.price === undefined
+                ? "-"
+                : coin.market.price.toLocaleString(undefined, {
+                    maximumFractionDigits: 8,
+                  })}
+            </span>
+            <span className="text-sm font-semibold text-slate-400">USD</span>
+          </div>
+        </div>
+      </section>
+
+      <section className="mt-8">
+        <h2 className="text-lg font-bold text-white">
+          {ticker} Historical Price
+        </h2>
+        <div className="mt-4">
+          <StatRow
+            label="Cached Range"
+            value={`${formatPrice(priceStats.low)} - ${formatPrice(priceStats.high)}`}
+          />
+          <StatRow label="Cached High" value={formatPrice(priceStats.high)} />
+          <StatRow label="Cached Low" value={formatPrice(priceStats.low)} />
+        </div>
       </section>
 
       <section className="mt-8">
