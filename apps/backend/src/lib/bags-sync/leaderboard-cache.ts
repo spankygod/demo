@@ -1,7 +1,6 @@
 import { Prisma, type PrismaClient } from "@prisma/client";
 
-import { bagsClient } from "../bags-client";
-import { upsertCachedCreators } from "../bags-db/coins";
+import { cacheTokenCreators } from "../bags-db/creator-cache";
 import {
   rankMarketCapLeaderboard,
   rankTopGainers,
@@ -222,29 +221,6 @@ const getSolUsdPrice = async () => {
   return solMarketData.get(wrappedSolMint)?.price ?? null;
 };
 
-const cacheTopEarnerCreators = async (
-  prisma: PrismaClient,
-  tokenMints: string[],
-) => {
-  const uniqueTokenMints = [...new Set(tokenMints)];
-
-  for (const tokenMintChunk of chunk(uniqueTokenMints, 10)) {
-    await Promise.allSettled(
-      tokenMintChunk.map(async (tokenMint) => {
-        const creators = await bagsClient.getTokenLaunchCreators(tokenMint);
-
-        if (creators.length > 0) {
-          await upsertCachedCreators(
-            prisma,
-            tokenMint,
-            creators as Array<Record<string, unknown>>,
-          );
-        }
-      }),
-    );
-  }
-};
-
 const toMarketLeaderboardRow = (
   kind: string,
   entry: SyncLeaderboardEntry,
@@ -413,7 +389,7 @@ export const refreshMarketLeaderboardCache = async (
       (row): row is Prisma.MarketLeaderboardEntryCreateManyInput =>
         row !== null,
     );
-  await cacheTopEarnerCreators(
+  await cacheTokenCreators(
     prisma,
     topEarnerRows.map((row) => row.tokenMint),
   );

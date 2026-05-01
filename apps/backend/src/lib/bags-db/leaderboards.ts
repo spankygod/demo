@@ -13,6 +13,7 @@ import {
   type CachedLeaderboardRow,
   type TokenWithLeaderboard,
 } from "./shared";
+import { getHydratedCreatorsForRows } from "./creator-cache";
 import { withTopEarnerAmounts } from "./top-earners";
 
 type TokenMarketHistoryPoint = {
@@ -236,7 +237,10 @@ const toLeaderboardItem = (
   source: "bags" as const,
 });
 
-const toCachedLeaderboardItem = (row: CachedLeaderboardRow) => ({
+const toCachedLeaderboardItem = (
+  row: CachedLeaderboardRow,
+  creator = row.token.creators.at(0) ?? null,
+) => ({
   rank: row.rank,
   name: row.name,
   symbol: row.symbol,
@@ -258,7 +262,7 @@ const toCachedLeaderboardItem = (row: CachedLeaderboardRow) => ({
   label: row.label,
   href: row.href,
   source: "bags" as const,
-  creator: row.token.creators.at(0) ?? null,
+  creator,
 });
 
 const getTrendingMetric = (entry: ReturnType<typeof buildLeaderboardEntry>) => {
@@ -343,15 +347,24 @@ export const getCachedLeaderboards = async (
   ]);
 
   if (leaderboardTotal > 0) {
+    const topEarnerCreatorsByMint = await getHydratedCreatorsForRows(
+      prisma,
+      topEarnerRows,
+    );
     const topEarners = await withTopEarnerAmounts(
-      topEarnerRows.map(toCachedLeaderboardItem),
+      topEarnerRows.map((row) =>
+        toCachedLeaderboardItem(
+          row,
+          topEarnerCreatorsByMint.get(row.tokenMint) ?? null,
+        ),
+      ),
     );
 
     return {
-      leaderboard: leaderboardRows.map(toCachedLeaderboardItem),
+      leaderboard: leaderboardRows.map((row) => toCachedLeaderboardItem(row)),
       leaderboardTotal,
-      trending: trendingRows.map(toCachedLeaderboardItem),
-      topGainers: topGainerRows.map(toCachedLeaderboardItem),
+      trending: trendingRows.map((row) => toCachedLeaderboardItem(row)),
+      topGainers: topGainerRows.map((row) => toCachedLeaderboardItem(row)),
       topEarners,
     };
   }

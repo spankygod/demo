@@ -194,7 +194,7 @@ const bagsMarketRoute: FastifyPluginAsync = async (fastify) => {
         return await withRedisCache(
           fastify,
           {
-            key: `bags:market:v2:limit:${limit}:page:${page}`,
+            key: `bags:market:v3:limit:${limit}:page:${page}`,
             ttlSeconds: 60,
           },
           async () => {
