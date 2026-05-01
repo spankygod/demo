@@ -36,7 +36,7 @@ const topEarnersColumns = [
   { label: " ", className: "w-11 px-3" },
   { label: "#", className: "w-14 px-3 text-left" },
   { label: "Token", className: "min-w-[280px] px-3 text-left" },
-  { label: "Creator", className: "w-48 px-3 text-left" },
+  { label: "", className: "w-48 px-3 text-center" },
   { label: "Creator Earning", className: "w-44 px-3 text-center" },
   { label: "Amount", className: "w-52 px-3 text-center" },
 ];
@@ -276,7 +276,7 @@ export function LeaderboardTable({
                 </TableCell>
                 {isTopEarners ? (
                   <>
-                    <TableCell className="w-48 px-3">
+                    <TableCell className="w-48 px-3 text-center">
                       <CreatorCell token={token} />
                     </TableCell>
                     <TableCell className="w-44 px-3 text-center font-mono tabular-nums text-zinc-50">

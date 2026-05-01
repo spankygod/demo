@@ -1,4 +1,3 @@
-import { UserRound } from "lucide-react";
 import Image from "next/image";
 
 import type { BagsTableRow } from "@/lib/home-market-mappers";
@@ -21,7 +20,10 @@ const getCreatorProfile = (creator: BagsTableRow["creator"]) => {
   const provider = creator.provider?.toLowerCase();
   const twitterHandle =
     provider === "twitter"
-      ? creator.providerUsername ?? creator.twitterUsername
+      ? (creator.providerUsername ??
+        creator.twitterUsername ??
+        creator.bagsUsername ??
+        creator.username)
       : creator.twitterUsername;
 
   if (twitterHandle) {
@@ -66,10 +68,17 @@ function CreatorSourceMark({
     return (
       <span
         aria-label="Twitter creator"
-        className="grid size-5 shrink-0 place-items-center rounded bg-[#1d9bf0] text-[10px] font-bold text-white"
+        className="grid h-4 w-6 shrink-0 place-items-center"
         title="Twitter creator"
       >
-        X
+        <Image
+          alt=""
+          className="h-4 w-auto object-contain"
+          height={16}
+          src="/x.svg"
+          unoptimized
+          width={26}
+        />
       </span>
     );
   }
@@ -78,10 +87,10 @@ function CreatorSourceMark({
     return (
       <span
         aria-label="Bags creator"
-        className="grid size-5 shrink-0 place-items-center rounded bg-white text-[10px] font-bold text-black"
+        className="grid h-4 w-6 shrink-0 place-items-center text-sm leading-none"
         title="Bags creator"
       >
-        B
+        💰
       </span>
     );
   }
@@ -89,7 +98,7 @@ function CreatorSourceMark({
   return (
     <span
       aria-label="Wallet creator"
-      className="grid size-5 shrink-0 place-items-center rounded bg-[#111827] text-[10px] font-bold text-zinc-300"
+      className="grid h-4 w-6 shrink-0 place-items-center text-sm font-bold leading-none text-zinc-400"
       title="Wallet creator"
     >
       #
@@ -106,30 +115,16 @@ export function CreatorCell({ token }: { token: BagsTableRow }) {
 
   const content = (
     <>
-      {token.creator?.pfp ? (
-        <Image
-          alt=""
-          className="size-6 shrink-0 rounded-full object-cover"
-          height={24}
-          unoptimized
-          src={token.creator.pfp}
-          width={24}
-        />
-      ) : (
-        <span className="grid size-6 shrink-0 place-items-center rounded-full bg-[#111827] text-zinc-300">
-          <UserRound className="size-3.5" />
-        </span>
-      )}
-      <span className="truncate text-sm font-semibold text-zinc-100">
+      <CreatorSourceMark source={profile.source} />
+      <span className="min-w-0 truncate text-sm font-semibold text-zinc-100">
         {profile.label}
       </span>
-      <CreatorSourceMark source={profile.source} />
     </>
   );
 
   return profile.href ? (
     <a
-      className="flex min-w-0 items-center gap-2 hover:text-white"
+      className="flex min-w-0 max-w-full items-center justify-start gap-2 hover:text-white"
       href={profile.href}
       rel="noreferrer"
       target="_blank"
@@ -137,6 +132,8 @@ export function CreatorCell({ token }: { token: BagsTableRow }) {
       {content}
     </a>
   ) : (
-    <div className="flex min-w-0 items-center gap-2">{content}</div>
+    <div className="flex min-w-0 max-w-full items-center justify-start gap-2">
+      {content}
+    </div>
   );
 }
