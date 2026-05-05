@@ -185,10 +185,12 @@ type FetchBackendOptions = {
 };
 
 export const getBackendBaseUrl = () =>
-  (process.env.ASTRALMARKET_API_BASE_URL ?? "http://127.0.0.1:4000").replace(
-    /\/$/u,
-    "",
-  );
+  (
+    process.env.ASTRALMARKET_API_BASE_URL ??
+    (process.env.NODE_ENV === "development"
+      ? "http://127.0.0.1:4000"
+      : "https://api.astralmarket.xyz")
+  ).replace(/\/$/u, "");
 
 const fetchBackend = async <T>(
   path: string,
