@@ -19,6 +19,7 @@ import {
   getNullableQuote,
 } from "../../../../../lib/bags-market";
 import { upsertLaunch } from "../../../../../lib/bags-sync";
+import { getWindowChange } from "../../../../../lib/market-change";
 import { getTokenSupply } from "../../../../../lib/solana-rpc";
 
 const creatorSchema = z.object({
@@ -89,6 +90,7 @@ const coinDetailResponseSchema = z.object({
       change1h: z.number().nullable().optional(),
       change6h: z.number().nullable().optional(),
       change24h: z.number().nullable().optional(),
+      change7d: z.number().nullable().optional(),
       volume24h: z.number().nullable().optional(),
       liquidityUsd: z.number().nullable().optional(),
       tokenSupply: z.string().nullable().optional(),
@@ -186,6 +188,11 @@ const coinDetailRoute: FastifyPluginAsync = async (fastify) => {
               volume24h: snapshot.volume24h ?? null,
               liquidityUsd: snapshot.liquidityUsd ?? null,
             }));
+          const change7d = getWindowChange(
+            latestSnapshot?.price ?? null,
+            null,
+            marketHistory,
+          );
 
           return {
             success: true as const,
@@ -222,6 +229,7 @@ const coinDetailRoute: FastifyPluginAsync = async (fastify) => {
                 change1h: latestSnapshot?.priceChange1h ?? null,
                 change6h: latestSnapshot?.priceChange6h ?? null,
                 change24h: latestSnapshot?.priceChange24h ?? null,
+                change7d,
                 volume24h: latestSnapshot?.volume24h ?? null,
                 liquidityUsd: latestSnapshot?.liquidityUsd ?? null,
                 tokenSupply: latestSnapshot?.tokenSupply ?? null,
@@ -358,6 +366,7 @@ const coinDetailRoute: FastifyPluginAsync = async (fastify) => {
               change1h: dexMarketData?.priceChange1h ?? null,
               change6h: dexMarketData?.priceChange6h ?? null,
               change24h: dexMarketData?.priceChange24h ?? null,
+              change7d: null,
               volume24h: dexMarketData?.volume24h ?? null,
               liquidityUsd: dexMarketData?.liquidityUsd ?? null,
               tokenSupply: supply?.uiAmountString ?? null,

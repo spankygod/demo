@@ -136,6 +136,7 @@ export type BagsCoinDetailData = {
     change1h?: number | null;
     change6h?: number | null;
     change24h?: number | null;
+    change7d?: number | null;
     volume24h?: number | null;
     liquidityUsd?: number | null;
     tokenSupply?: string | null;

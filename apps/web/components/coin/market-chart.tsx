@@ -109,7 +109,14 @@ export function MarketChart({ coin }: { coin: BagsCoinDetailData }) {
     { label: "1h", value: coin.market.change1h },
     { label: "6h", value: coin.market.change6h },
     { label: "24h", value: coin.market.change24h },
-    { label: "Cached", display: series.changeLabel },
+    {
+      label: "7d",
+      value: coin.market.change7d,
+      display:
+        coin.market.change7d === null || coin.market.change7d === undefined
+          ? series.changeLabel
+          : undefined,
+    },
   ];
 
   return (
@@ -142,25 +149,15 @@ export function MarketChart({ coin }: { coin: BagsCoinDetailData }) {
       <div className="mt-4 flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
         <div className="flex flex-wrap gap-2">
           {["Price", "Compare"].map((item) => (
-            <button
-              className={chartActionClassName}
-              key={item}
-              type="button"
-            >
+            <button className={chartActionClassName} key={item} type="button">
               {item}
               <ChevronDown className="size-4 text-zinc-300" />
             </button>
           ))}
-          <button
-            className={chartIconActionClassName}
-            type="button"
-          >
+          <button className={chartIconActionClassName} type="button">
             <ChartCandlestick className="size-4" />
           </button>
-          <button
-            className={chartIconActionClassName}
-            type="button"
-          >
+          <button className={chartIconActionClassName} type="button">
             TV
           </button>
         </div>

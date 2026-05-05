@@ -6,6 +6,7 @@ import {
   rankTrendingTokens,
 } from "../bags-leaderboards";
 import { getMarketSignal, type BagsLaunchView } from "../bags-market";
+import { getWindowChange } from "../market-change";
 import {
   marketLeaderboardEntrySelect,
   tokenLeaderboardSelect,
@@ -98,26 +99,6 @@ const getPriceSparkline = (history: TokenMarketHistoryPoint[] | undefined) => {
       .map((snapshot) => snapshot.price as number) ?? [];
 
   return downsamplePoints(points);
-};
-
-const getSevenDayChange = (
-  currentPrice: number | null | undefined,
-  referencePrice: number | undefined,
-) => {
-  if (
-    currentPrice === null ||
-    currentPrice === undefined ||
-    referencePrice === undefined ||
-    !Number.isFinite(currentPrice) ||
-    !Number.isFinite(referencePrice) ||
-    referencePrice <= 0
-  ) {
-    return null;
-  }
-
-  return Number(
-    (((currentPrice - referencePrice) / referencePrice) * 100).toFixed(2),
-  );
 };
 
 const getSevenDayMarketHistory = async (
@@ -222,9 +203,10 @@ const toLeaderboardItem = (
   volume24h: entry.latestSnapshot?.volume24h ?? null,
   change1h: entry.latestSnapshot?.priceChange1h ?? null,
   change24h: entry.latestSnapshot?.priceChange24h ?? null,
-  change7d: getSevenDayChange(
+  change7d: getWindowChange(
     entry.latestSnapshot?.price ?? null,
     referenceByMint?.get(entry.launch.tokenMint),
+    historyByMint?.get(entry.launch.tokenMint),
   ),
   sparkline: getPriceSparkline(historyByMint?.get(entry.launch.tokenMint)),
   label:
