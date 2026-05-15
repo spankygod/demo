@@ -129,6 +129,9 @@ const getDexScreenerPrice = (coin: BagsCoinDetailData) => {
     : null;
 };
 
+const shouldFallbackToDexScreener = (status: number | null) =>
+  status !== null && status >= 400;
+
 export function TradePanel({ coin }: { coin: BagsCoinDetailData }) {
   const [tokenAmount, setTokenAmount] = useState(defaultAmount);
   const [usdcAmount, setUsdcAmount] = useState("0");
@@ -335,7 +338,7 @@ export function TradePanel({ coin }: { coin: BagsCoinDetailData }) {
       const activeQuote = activeQuoteResult.quote;
 
       if (!activeQuote) {
-        if (activeQuoteResult.status === 429) {
+        if (shouldFallbackToDexScreener(activeQuoteResult.status)) {
           window.location.assign(getDexScreenerUrl(coin));
         }
 
@@ -349,7 +352,7 @@ export function TradePanel({ coin }: { coin: BagsCoinDetailData }) {
       const swap = swapResult.response;
 
       if (!swap) {
-        if (swapResult.status === 429) {
+        if (shouldFallbackToDexScreener(swapResult.status)) {
           window.location.assign(getDexScreenerUrl(coin));
         }
 
