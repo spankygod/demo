@@ -49,7 +49,7 @@ const bagsTokenCreatorSchema = z
   })
   .passthrough();
 
-const bagsTradeQuoteSchema = z.object({
+export const bagsTradeQuoteSchema = z.object({
   requestId: z.string(),
   contextSlot: z.number(),
   inAmount: z.string(),
@@ -86,6 +86,13 @@ const bagsTradeQuoteSchema = z.object({
   simulatedComputeUnits: z.number().optional(),
 });
 
+const bagsSwapTransactionSchema = z.object({
+  swapTransaction: z.string(),
+  computeUnitLimit: z.number(),
+  lastValidBlockHeight: z.number(),
+  prioritizationFeeLamports: z.number(),
+});
+
 const bagsLifetimeFeesTopTokenSchema = z
   .object({
     token: z.string(),
@@ -106,9 +113,12 @@ type BagsPool = z.infer<typeof bagsPoolSchema>;
 type BagsTokenCreator = z.infer<typeof bagsTokenCreatorSchema>;
 type BagsLifetimeFeesTopToken = z.infer<typeof bagsLifetimeFeesTopTokenSchema>;
 type BagsTokenLaunch = z.infer<typeof bagsTokenLaunchSchema>;
-type BagsTradeQuote = z.infer<typeof bagsTradeQuoteSchema>;
+export type BagsTradeQuote = z.infer<typeof bagsTradeQuoteSchema>;
+type BagsSwapTransaction = z.infer<typeof bagsSwapTransactionSchema>;
 
 type RequestOptions = {
+  body?: unknown;
+  method?: "GET" | "POST";
   path: string;
   query?: Record<string, boolean | number | string | undefined>;
 };
@@ -141,10 +151,19 @@ const request = async <T extends z.ZodTypeAny>(
     }
   }
 
+  const method = options.method ?? "GET";
+  const headers: Record<string, string> = {
+    "x-api-key": env.bagsApiKey,
+  };
+
+  if (options.body !== undefined) {
+    headers["Content-Type"] = "application/json";
+  }
+
   const response = await fetch(url, {
-    headers: {
-      "x-api-key": env.bagsApiKey,
-    },
+    body: options.body === undefined ? undefined : JSON.stringify(options.body),
+    headers,
+    method,
   });
 
   let payload: unknown;
@@ -152,7 +171,10 @@ const request = async <T extends z.ZodTypeAny>(
   try {
     payload = await response.json();
   } catch {
-    throw new BagsApiError("Bags API returned a non-JSON response", response.status);
+    throw new BagsApiError(
+      "Bags API returned a non-JSON response",
+      response.status,
+    );
   }
 
   const baseResponse = z
@@ -241,6 +263,7 @@ export const bagsClient = {
     inputMint: string,
     outputMint: string,
     amount: number,
+    options: { slippageBps?: number; slippageMode?: "auto" | "manual" } = {},
   ): Promise<BagsTradeQuote> {
     return request(
       {
@@ -249,9 +272,41 @@ export const bagsClient = {
           amount,
           inputMint,
           outputMint,
+          slippageBps: options.slippageBps,
+          slippageMode: options.slippageMode,
         },
       },
       bagsTradeQuoteSchema,
+    );
+  },
+
+  createSwapTransaction(
+    quoteResponse: BagsTradeQuote,
+    userPublicKey: string,
+  ): Promise<BagsSwapTransaction> {
+    return request(
+      {
+        body: {
+          quoteResponse,
+          userPublicKey,
+        },
+        method: "POST",
+        path: "/trade/swap",
+      },
+      bagsSwapTransactionSchema,
+    );
+  },
+
+  sendTransaction(transaction: string): Promise<string> {
+    return request(
+      {
+        body: {
+          transaction,
+        },
+        method: "POST",
+        path: "/solana/send-transaction",
+      },
+      z.string(),
     );
   },
 };

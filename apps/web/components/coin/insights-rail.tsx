@@ -8,7 +8,7 @@ import {
   getPoolLabel,
   getQuoteSummary,
 } from "@/lib/coin-detail-mappers";
-import { formatMarketCap } from "@/lib/market-format";
+import { formatFullCurrency } from "@/lib/market-format";
 
 export function InsightsRail({ coin }: { coin: BagsCoinDetailData }) {
   const quoteSummary = getQuoteSummary(coin.quote);
@@ -19,7 +19,7 @@ export function InsightsRail({ coin }: { coin: BagsCoinDetailData }) {
     `${coin.token.symbol || coin.token.name} is tracked in the Bags launch feed.`,
     `${getPoolLabel(coin.token.migrationStatus)} is the current derived pool state.`,
     coin.market.marketCap
-      ? `Cached market cap is ${formatMarketCap(coin.market.marketCap)}.`
+      ? `Cached market cap is ${formatFullCurrency(coin.market.marketCap)}.`
       : "No cached market cap is available yet.",
     quoteSummary?.routeCount
       ? `Quote route currently has ${quoteSummary.routeCount} leg${quoteSummary.routeCount === 1 ? "" : "s"}.`

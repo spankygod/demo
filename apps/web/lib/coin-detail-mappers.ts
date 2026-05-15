@@ -70,6 +70,22 @@ export const formatTokenSupply = (value?: string | null) => {
   });
 };
 
+export const getFullyDilutedValuation = (coin: BagsCoinDetailData) => {
+  const supply = Number(coin.market.tokenSupply);
+  const price = coin.market.price;
+
+  if (
+    price === null ||
+    price === undefined ||
+    !Number.isFinite(price) ||
+    !Number.isFinite(supply)
+  ) {
+    return null;
+  }
+
+  return price * supply;
+};
+
 export const formatMarketSource = (value?: string | null) => {
   if (!value) {
     return "-";
@@ -187,6 +203,7 @@ const getSeriesChange = (points: Array<{ value: number }>) => {
 
 const buildSignalFallbackPoints = (value: number) => {
   const base = Number.isFinite(value) ? value : 1;
+  const now = Date.now();
   const amplitude = Math.max(Math.abs(base) * 0.08, 0.8);
   const offsets = [
     -0.45, -0.1, 0.25, 0.05, 0.45, 0.2, 0.65, 0.35, 0.8, 0.55, 1,
@@ -202,28 +219,57 @@ const buildSignalFallbackPoints = (value: number) => {
           : index === middleIndex
             ? "Signal"
             : "",
+    timestamp: now - (offsets.length - 1 - index) * 60 * 60 * 1000,
     value: Number(Math.max(base + offset * amplitude, 0).toFixed(4)),
+    volume: null,
   }));
 };
 
-export const buildChartSeries = (coin: BagsCoinDetailData) => {
+export type ChartRange = "1H" | "6H" | "24H" | "7D";
+
+const chartRangeMs: Record<ChartRange, number> = {
+  "1H": 60 * 60 * 1000,
+  "6H": 6 * 60 * 60 * 1000,
+  "24H": 24 * 60 * 60 * 1000,
+  "7D": 7 * 24 * 60 * 60 * 1000,
+};
+
+export const buildChartSeries = (
+  coin: BagsCoinDetailData,
+  range: ChartRange = "7D",
+) => {
+  const latestTimestamp =
+    coin.marketHistory
+      .map((snapshot) => new Date(snapshot.capturedAt).getTime())
+      .filter((timestamp) => Number.isFinite(timestamp))
+      .reduce((latest, timestamp) => Math.max(latest, timestamp), 0) ||
+    Date.now();
+  const windowStart = latestTimestamp - chartRangeMs[range];
   const pricePoints = coin.marketHistory
     .filter((snapshot) => snapshot.price !== null)
     .map((snapshot) => ({
+      capturedAt: snapshot.capturedAt,
       label: formatSnapshotDate(snapshot.capturedAt),
+      timestamp: new Date(snapshot.capturedAt).getTime(),
       value: snapshot.price as number,
-    }));
+      volume: snapshot.volume24h,
+    }))
+    .filter(
+      (point) =>
+        Number.isFinite(point.timestamp) && point.timestamp >= windowStart,
+    );
 
-  if (pricePoints.length >= 2) {
+  if (pricePoints.length > 0) {
     const points = downsampleChartPoints(pricePoints);
     const change = getSeriesChange(points);
 
     return {
-      title: "Price",
-      sourceLabel: "Cached price snapshots",
+      title: "Price Chart",
+      sourceLabel: `${range} cached price snapshots`,
       points,
       formatValue: formatPrice,
-      negative: points.at(-1)!.value < points[0]!.value,
+      negative:
+        points.length > 1 ? points.at(-1)!.value < points[0]!.value : false,
       sparse: pricePoints.length < 24,
       changeLabel: change === null ? "-" : formatPercent(change),
     };
@@ -232,9 +278,16 @@ export const buildChartSeries = (coin: BagsCoinDetailData) => {
   const signalPoints = coin.marketHistory
     .filter((snapshot) => snapshot.marketSignal !== null)
     .map((snapshot) => ({
+      capturedAt: snapshot.capturedAt,
       label: formatSnapshotDate(snapshot.capturedAt),
+      timestamp: new Date(snapshot.capturedAt).getTime(),
       value: snapshot.marketSignal as number,
-    }));
+      volume: snapshot.volume24h,
+    }))
+    .filter(
+      (point) =>
+        Number.isFinite(point.timestamp) && point.timestamp >= windowStart,
+    );
 
   const points =
     signalPoints.length >= 2
@@ -242,7 +295,7 @@ export const buildChartSeries = (coin: BagsCoinDetailData) => {
       : buildSignalFallbackPoints(coin.marketSignal.value);
 
   return {
-    title: "Bags Signal",
+    title: "Bags Signal Chart",
     sourceLabel: "Price history pending",
     points,
     formatValue: (value?: number | null) =>

@@ -10,13 +10,13 @@ import {
   getPoolLabel,
   shortenKey,
 } from "@/lib/coin-detail-mappers";
-import { formatMarketCap, formatPercent } from "@/lib/market-format";
+import { formatFullCurrency, formatPercent } from "@/lib/market-format";
 
 export function TopChrome({ coin }: { coin: BagsCoinDetailData | null }) {
   const stats = [
     ["Bags Launch", coin ? formatStatus(coin.token.status) : "N/A"],
     ["Pool State", coin ? getPoolLabel(coin.token.migrationStatus) : "N/A"],
-    ["Market Cap", coin ? formatMarketCap(coin.market.marketCap) : "-"],
+    ["Market Cap", coin ? formatFullCurrency(coin.market.marketCap) : "-"],
     ["24h", coin ? formatPercent(coin.market.change24h) : "-"],
     ["Quote Mint", coin ? shortenKey(coin.quoteMint) : "N/A"],
   ];
