@@ -36,7 +36,7 @@ const formatRankKind = (kind: string) =>
 
 const chartActionClassName = `${coinActionClassName} border border-[#2a2a2a] bg-[#111111] text-zinc-100 hover:bg-[#1f1f1f]`;
 
-const chartRanges: ChartRange[] = ["1H", "6H", "24H", "7D"];
+const chartRanges: ChartRange[] = ["6H", "24H", "7D"];
 
 const formatAxisDate = (timestamp: number, range: ChartRange) =>
   range === "7D"
