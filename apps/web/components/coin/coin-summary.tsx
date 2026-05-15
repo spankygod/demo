@@ -111,15 +111,15 @@ export function CoinSummary({ coin }: { coin: BagsCoinDetailData }) {
       <div className="mt-7">
         <div className="flex items-center justify-between gap-3 font-mono text-xs font-semibold text-zinc-100">
           <span>{formatPrice(priceStats.low)}</span>
-          <span className="font-sans text-zinc-300">Cached Range</span>
+          <span className="font-sans text-zinc-300">Range</span>
           <span>{formatPrice(priceStats.high)}</span>
         </div>
-        <div className="relative mt-2 h-1.5 rounded-full bg-[#1f1f1f]">
+        <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-[#1f1f1f]">
           {priceStats.position !== null ? (
-            <span
-              className="absolute top-1/2 size-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-green-400 ring-2 ring-[#050505]"
+            <div
+              className="h-full rounded-full bg-green-400"
               style={{
-                left: `${priceStats.position}%`,
+                width: `${priceStats.position}%`,
               }}
             />
           ) : null}
