@@ -32,6 +32,7 @@ npm-debug.log*
 pnpm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+dev-apps.*.log
 
 # TypeScript / tooling caches
 *.tsbuildinfo

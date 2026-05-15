@@ -71,6 +71,17 @@ export const formatMarketCap = (value?: number | null) => {
   return `$${trimTrailingZeros(value.toFixed(2))}`;
 };
 
+export const formatFullCurrency = (value?: number | null) => {
+  if (value === null || value === undefined || !Number.isFinite(value)) {
+    return "-";
+  }
+
+  return `$${value.toLocaleString(undefined, {
+    maximumFractionDigits: 2,
+    minimumFractionDigits: value >= 1 ? 2 : 0,
+  })}`;
+};
+
 export const formatPercent = (value?: number | null) => {
   if (value === null || value === undefined || !Number.isFinite(value)) {
     return "-";

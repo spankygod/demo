@@ -1,9 +1,4 @@
-import {
-  Bell,
-  ExternalLink,
-  Globe,
-  Link as LinkIcon,
-} from "lucide-react";
+import { Bell, ExternalLink, Globe, Link as LinkIcon } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 
@@ -11,17 +6,16 @@ import { Badge } from "@/components/ui/badge";
 import type { BagsCoinDetailData } from "@/lib/bags-api";
 import {
   coinActionClassName,
-  formatLamports,
-  formatMarketSource,
   formatTokenSupply,
   getCategories,
-  getPoolLabel,
+  getFullyDilutedValuation,
   getSafeExternalUrl,
 } from "@/lib/coin-detail-mappers";
-import { formatMarketCap, formatPrice } from "@/lib/market-format";
+import { formatFullCurrency, formatPrice } from "@/lib/market-format";
 
 import { CoinChangeText } from "./coin-change-text";
 import { StatRow } from "./stat-row";
+import { TradePanel } from "./trade-panel";
 
 const getPriceStats = (coin: BagsCoinDetailData) => {
   const prices = coin.marketHistory
@@ -35,18 +29,21 @@ const getPriceStats = (coin: BagsCoinDetailData) => {
     return {
       high: null,
       low: null,
-      position: 0,
+      position: null,
     };
   }
 
   const low = Math.min(...prices);
   const high = Math.max(...prices);
-  const range = Math.max(high - low, Number.EPSILON);
+  const range = high - low;
 
   return {
     high,
     low,
-    position: Math.min(Math.max(((latestPrice - low) / range) * 100, 0), 100),
+    position:
+      range <= 0
+        ? 50
+        : Math.min(Math.max(((latestPrice - low) / range) * 100, 0), 100),
   };
 };
 
@@ -57,6 +54,7 @@ export function CoinSummary({ coin }: { coin: BagsCoinDetailData }) {
   const websiteUrl = getSafeExternalUrl(coin.token.website);
   const priceStats = getPriceStats(coin);
   const ticker = coin.token.symbol || coin.token.name || "Token";
+  const fullyDilutedValuation = getFullyDilutedValuation(coin);
 
   return (
     <aside className="min-w-0 border-r border-[#1a1a1a] px-6 py-8 lg:px-7">
@@ -116,26 +114,16 @@ export function CoinSummary({ coin }: { coin: BagsCoinDetailData }) {
           <span className="font-sans text-zinc-300">Cached Range</span>
           <span>{formatPrice(priceStats.high)}</span>
         </div>
-        <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-[#1f1f1f]">
-          <div
-            className="h-full rounded-full bg-green-400"
-            style={{
-              width: `${priceStats.position}%`,
-            }}
-          />
+        <div className="relative mt-2 h-1.5 rounded-full bg-[#1f1f1f]">
+          {priceStats.position !== null ? (
+            <span
+              className="absolute top-1/2 size-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-green-400 ring-2 ring-[#050505]"
+              style={{
+                left: `${priceStats.position}%`,
+              }}
+            />
+          ) : null}
         </div>
-      </div>
-
-      <div className="mt-6 h-1.5 overflow-hidden rounded-full bg-[#1f1f1f]">
-        <div
-          className={
-            coin.token.migrationStatus === "migrated"
-              ? "h-full w-full bg-green-400"
-              : coin.token.migrationStatus === "dbc"
-                ? "h-full w-2/3 bg-yellow-300"
-                : "h-full w-1/3 bg-zinc-400"
-          }
-        />
       </div>
 
       <div className="mt-5 flex gap-2">
@@ -173,45 +161,27 @@ export function CoinSummary({ coin }: { coin: BagsCoinDetailData }) {
       <section className="mt-7">
         <StatRow
           label="Market Cap"
-          value={formatMarketCap(coin.market.marketCap)}
+          value={formatFullCurrency(coin.market.marketCap)}
+        />
+        <StatRow
+          label="Fully Diluted Valuation"
+          value={formatFullCurrency(fullyDilutedValuation)}
         />
         <StatRow
           label="24h Volume"
-          value={formatMarketCap(coin.market.volume24h)}
+          value={formatFullCurrency(coin.market.volume24h)}
         />
         <StatRow
           label="Liquidity"
-          value={formatMarketCap(coin.market.liquidityUsd)}
-        />
-        <StatRow
-          label="1h"
-          value={<CoinChangeText value={coin.market.change1h} />}
-        />
-        <StatRow
-          label="6h"
-          value={<CoinChangeText value={coin.market.change6h} />}
-        />
-        <StatRow
-          label="24h"
-          value={<CoinChangeText value={coin.market.change24h} />}
+          value={formatFullCurrency(coin.market.liquidityUsd)}
         />
         <StatRow
           label="Supply"
           value={formatTokenSupply(coin.market.tokenSupply)}
         />
-        <StatRow
-          label="Lifetime Fees"
-          value={formatLamports(coin.lifetimeFeesLamports)}
-        />
-        <StatRow
-          label="Pool State"
-          value={getPoolLabel(coin.token.migrationStatus)}
-        />
-        <StatRow
-          label="Market Source"
-          value={formatMarketSource(coin.market.marketDataSource)}
-        />
       </section>
+
+      <TradePanel coin={coin} />
 
       <section className="mt-8">
         <h2 className="text-lg font-bold text-white">{ticker} Converter</h2>
@@ -232,20 +202,6 @@ export function CoinSummary({ coin }: { coin: BagsCoinDetailData }) {
             </span>
             <span className="text-sm font-semibold text-zinc-400">USD</span>
           </div>
-        </div>
-      </section>
-
-      <section className="mt-8">
-        <h2 className="text-lg font-bold text-white">
-          {ticker} Historical Price
-        </h2>
-        <div className="mt-4">
-          <StatRow
-            label="Cached Range"
-            value={`${formatPrice(priceStats.low)} - ${formatPrice(priceStats.high)}`}
-          />
-          <StatRow label="Cached High" value={formatPrice(priceStats.high)} />
-          <StatRow label="Cached Low" value={formatPrice(priceStats.low)} />
         </div>
       </section>
 

@@ -174,18 +174,63 @@ export type BagsCoinDetailData = {
   quoteMint: string;
 };
 
+export type BagsTradeRouteLeg = {
+  venue: string;
+  inAmount: string;
+  outAmount: string;
+  inputMint: string;
+  outputMint: string;
+  inputMintDecimals: number;
+  outputMintDecimals: number;
+  marketKey: string;
+  data?: string | null;
+};
+
+export type BagsTradeQuote = {
+  requestId: string;
+  contextSlot: number;
+  inAmount: string;
+  inputMint: string;
+  outAmount: string;
+  outputMint: string;
+  minOutAmount: string;
+  otherAmountThreshold: string;
+  priceImpactPct: string;
+  slippageBps: number;
+  routePlan: BagsTradeRouteLeg[];
+  platformFee?: {
+    amount?: string | null;
+    feeBps?: number | null;
+    feeAccount?: string | null;
+    segmenterFeeAmount?: string | null;
+    segmenterFeePct?: number | null;
+  };
+  outTransferFee?: string | null;
+  simulatedComputeUnits?: number;
+};
+
+export type BagsSwapTransaction = {
+  swapTransaction: string;
+  computeUnitLimit: number;
+  lastValidBlockHeight: number;
+  prioritizationFeeLamports: number;
+};
+
 type ApiEnvelope<T> = {
   success: true;
   response: T;
 };
 
 type FetchBackendOptions = {
-  revalidate: number;
+  body?: unknown;
+  method?: "GET" | "POST";
+  revalidate?: number;
   tags?: string[];
 };
 
 export const getBackendBaseUrl = () =>
   (
+    process.env.NEXT_PUBLIC_ASTRALMARKET_API_BASE_URL ??
     process.env.ASTRALMARKET_API_BASE_URL ??
     (process.env.NODE_ENV === "development"
       ? "http://127.0.0.1:4000"
@@ -197,8 +242,10 @@ const fetchBackend = async <T>(
   options: FetchBackendOptions,
 ): Promise<T | null> => {
   try {
+    const isServer = typeof window === "undefined";
+    const method = options.method ?? "GET";
     const fetchOptions =
-      process.env.NODE_ENV === "development"
+      !isServer || process.env.NODE_ENV === "development" || method !== "GET"
         ? { cache: "no-store" as const }
         : {
             next: {
@@ -206,7 +253,19 @@ const fetchBackend = async <T>(
               tags: options.tags,
             },
           };
-    const response = await fetch(`${getBackendBaseUrl()}${path}`, fetchOptions);
+    const headers =
+      options.body === undefined
+        ? undefined
+        : {
+            "Content-Type": "application/json",
+          };
+    const response = await fetch(`${getBackendBaseUrl()}${path}`, {
+      ...fetchOptions,
+      body:
+        options.body === undefined ? undefined : JSON.stringify(options.body),
+      headers,
+      method,
+    });
 
     if (!response.ok) {
       return null;
@@ -248,3 +307,30 @@ export const fetchBagsCoin = (identifier: string) =>
       tags: ["bags-coin", `bags-coin-${identifier}`],
     },
   );
+
+export const fetchBagsTradeQuote = (body: {
+  amount: number;
+  inputMint: string;
+  outputMint: string;
+  slippageBps?: number;
+  slippageMode?: "auto" | "manual";
+}) =>
+  fetchBackend<BagsTradeQuote>("/v1/bags/trade/quote", {
+    body,
+    method: "POST",
+  });
+
+export const createBagsSwapTransaction = (body: {
+  quoteResponse: BagsTradeQuote;
+  userPublicKey: string;
+}) =>
+  fetchBackend<BagsSwapTransaction>("/v1/bags/trade/swap", {
+    body,
+    method: "POST",
+  });
+
+export const sendBagsSignedTransaction = (body: { transaction: string }) =>
+  fetchBackend<string>("/v1/bags/trade/send", {
+    body,
+    method: "POST",
+  });

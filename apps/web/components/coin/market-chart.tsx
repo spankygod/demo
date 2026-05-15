@@ -1,22 +1,25 @@
+"use client";
+
 import {
-  ChevronDown,
-  ChartCandlestick,
+  ChartNoAxesColumn,
   EllipsisVertical,
   Layers3,
   Shield,
   Trophy,
 } from "lucide-react";
+import { useState } from "react";
 
 import type { BagsCoinDetailData } from "@/lib/bags-api";
 import {
   buildChartSeries,
+  type ChartRange,
   coinActionClassName,
-  formatMarketSource,
   formatSnapshotDate,
   formatTokenSupply,
+  getFullyDilutedValuation,
   shortenKey,
 } from "@/lib/coin-detail-mappers";
-import { formatMarketCap, formatPercent } from "@/lib/market-format";
+import { formatFullCurrency, formatPercent } from "@/lib/market-format";
 
 import { StatRow } from "./stat-row";
 
@@ -31,51 +34,103 @@ const formatRankKind = (kind: string) =>
   rankLabels[kind] ??
   kind.replace(/_/gu, " ").replace(/\b\w/gu, (letter) => letter.toUpperCase());
 
-const getDexPairUrl = (pairAddress?: string | null) =>
-  pairAddress ? `https://dexscreener.com/solana/${pairAddress}` : null;
-
 const chartActionClassName = `${coinActionClassName} border border-[#2a2a2a] bg-[#111111] text-zinc-100 hover:bg-[#1f1f1f]`;
-const chartIconActionClassName = `${chartActionClassName} size-9 p-0`;
+
+const chartRanges: ChartRange[] = ["1H", "6H", "24H", "7D"];
+
+const formatAxisDate = (timestamp: number, range: ChartRange) =>
+  range === "7D"
+    ? new Date(timestamp).toLocaleDateString(undefined, {
+        day: "numeric",
+        month: "short",
+      })
+    : new Date(timestamp).toLocaleTimeString(undefined, {
+        hour: "numeric",
+        minute: "2-digit",
+      });
 
 export function MarketChart({ coin }: { coin: BagsCoinDetailData }) {
-  const series = buildChartSeries(coin);
+  const [selectedRange, setSelectedRange] = useState<ChartRange>("7D");
+  const series = buildChartSeries(coin, selectedRange);
   const points = series.points.map((point) => point.value);
   const width = 980;
-  const height = 565;
-  const plotTop = 34;
-  const plotHeight = 420;
+  const height = 545;
+  const plotTop = 28;
+  const plotHeight = 372;
   const plotBottom = plotTop + plotHeight;
   const axisGutter = 72;
   const plotLeft = 0;
   const plotRight = width - axisGutter;
   const plotWidth = plotRight - plotLeft;
+  const timestamps = series.points.map((point) => point.timestamp);
+  const minTimestamp = Math.min(...timestamps);
+  const maxTimestamp = Math.max(...timestamps);
+  const timeSpan = Math.max(maxTimestamp - minTimestamp, 1);
   const min = Math.min(...points);
   const max = Math.max(...points);
-  const span = Math.max(max - min, Number.EPSILON);
+  const rawSpan = max - min;
+  const valuePadding =
+    rawSpan === 0
+      ? Math.max(Math.abs(max) * 0.08, Number.EPSILON)
+      : rawSpan * 0.08;
+  const plotMin = min - valuePadding;
+  const plotMax = max + valuePadding;
+  const span = Math.max(plotMax - plotMin, Number.EPSILON);
   const stroke = series.negative ? "#ff3b30" : "#22c55e";
-  const coordinates = points.map((point, index) => {
-    const x = plotLeft + (index / Math.max(points.length - 1, 1)) * plotWidth;
-    const y = plotBottom - ((point - min) / span) * plotHeight;
+  const coordinates = series.points.map((point) => {
+    const x =
+      series.points.length === 1
+        ? plotLeft + plotWidth / 2
+        : plotLeft + ((point.timestamp - minTimestamp) / timeSpan) * plotWidth;
+    const y = plotBottom - ((point.value - plotMin) / span) * plotHeight;
 
     return [x, y] as const;
   });
-  const barBottom = 535;
-  const barMaxHeight = 58;
-  const volumeBars = points.map((point, index) => {
-    const normalized = (point - min) / span;
-    const height = 12 + normalized * barMaxHeight * 0.7 + (index % 5) * 1.5;
-    const barWidth = Math.max(plotWidth / Math.max(points.length, 1) - 2, 1.5);
-    const x =
-      plotLeft +
-      (index / Math.max(points.length - 1, 1)) * (plotWidth - barWidth);
+  const barBottom = 500;
+  const barTop = 438;
+  const barMaxHeight = barBottom - barTop;
+  const volumes = series.points
+    .map((point) => point.volume)
+    .filter(
+      (volume): volume is number =>
+        volume !== null && volume !== undefined && Number.isFinite(volume),
+    );
+  const maxVolume = Math.max(...volumes, 0);
+  const volumeBars = series.points.flatMap((point, index) => {
+    if (
+      point.volume === null ||
+      point.volume === undefined ||
+      !Number.isFinite(point.volume) ||
+      maxVolume <= 0
+    ) {
+      return [];
+    }
 
-    return {
-      height: Math.min(height, barMaxHeight),
-      width: barWidth,
-      x,
-    };
+    const barWidth = Math.max(
+      Math.min(plotWidth / Math.max(series.points.length, 1) - 2, 10),
+      2,
+    );
+    const x =
+      coordinates[index]![0] -
+      (series.points.length === 1 ? barWidth / 2 : barWidth / 2);
+    const height = Math.max((point.volume / maxVolume) * barMaxHeight, 1);
+
+    return [
+      {
+        height,
+        width: barWidth,
+        x: Math.min(Math.max(x, plotLeft), plotRight - barWidth),
+      },
+    ];
   });
-  const linePath = coordinates
+  const lineCoordinates =
+    coordinates.length === 1
+      ? [
+          [plotLeft, coordinates[0]![1]] as const,
+          [plotRight, coordinates[0]![1]] as const,
+        ]
+      : coordinates;
+  const linePath = lineCoordinates
     .map(
       ([x, y], index) =>
         `${index === 0 ? "M" : "L"} ${x.toFixed(2)} ${y.toFixed(2)}`,
@@ -90,24 +145,27 @@ export function MarketChart({ coin }: { coin: BagsCoinDetailData }) {
     ]),
   ];
   const gridLines = Array.from({ length: 5 }, (_, index) => {
-    const value = max - (span / 4) * index;
+    const value = plotMax - (span / 4) * index;
     const y = plotTop + (plotHeight / 4) * index;
 
     return { value, y };
   });
+  const xAxisLabels = labelIndexes.map((pointIndex) => ({
+    label: formatAxisDate(series.points[pointIndex]!.timestamp, selectedRange),
+    pointIndex,
+    x: coordinates[pointIndex]?.[0] ?? plotLeft,
+  }));
   const leaderboardRanks = coin.leaderboardRanks ?? [];
-  const dexPairUrl = getDexPairUrl(coin.market.dexPairAddress);
+  const fullyDilutedValuation = getFullyDilutedValuation(coin);
   const marketStats = [
-    ["Market Cap", formatMarketCap(coin.market.marketCap)],
-    ["24h Volume", formatMarketCap(coin.market.volume24h)],
-    ["Liquidity", formatMarketCap(coin.market.liquidityUsd)],
+    ["Market Cap", formatFullCurrency(coin.market.marketCap)],
+    ["Fully Diluted Valuation", formatFullCurrency(fullyDilutedValuation)],
+    ["24h Volume", formatFullCurrency(coin.market.volume24h)],
+    ["Liquidity", formatFullCurrency(coin.market.liquidityUsd)],
     ["Supply", formatTokenSupply(coin.market.tokenSupply)],
-    ["Source", formatMarketSource(coin.market.marketDataSource)],
     ["Updated", formatSnapshotDate(coin.market.lastUpdatedAt)],
   ];
   const performance = [
-    { label: "1h", value: coin.market.change1h },
-    { label: "6h", value: coin.market.change6h },
     { label: "24h", value: coin.market.change24h },
     {
       label: "7d",
@@ -146,32 +204,56 @@ export function MarketChart({ coin }: { coin: BagsCoinDetailData }) {
         </div>
       </div>
 
+      <div className="mt-5 flex flex-col gap-3 border-b border-[#1a1a1a] pb-4 xl:flex-row xl:items-center xl:justify-between">
+        <div>
+          <h2 className="text-xl font-bold text-white">
+            {coin.token.symbol || coin.token.name} {series.title}
+          </h2>
+          <p className="mt-1 text-sm text-zinc-500">{series.sourceLabel}</p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            className="inline-flex h-9 items-center justify-center rounded-md bg-[#111111] px-3 text-sm font-semibold text-white"
+            type="button"
+          >
+            Price
+          </button>
+          <button
+            className="inline-flex h-9 cursor-not-allowed items-center justify-center rounded-md border border-[#2a2a2a] px-3 text-sm font-semibold text-zinc-500"
+            disabled
+            type="button"
+          >
+            Market Cap
+          </button>
+        </div>
+      </div>
+
       <div className="mt-4 flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
         <div className="flex flex-wrap gap-2">
-          {["Price", "Compare"].map((item) => (
-            <button className={chartActionClassName} key={item} type="button">
-              {item}
-              <ChevronDown className="size-4 text-zinc-300" />
-            </button>
-          ))}
-          <button className={chartIconActionClassName} type="button">
-            <ChartCandlestick className="size-4" />
+          <button className={chartActionClassName} type="button">
+            <ChartNoAxesColumn className="size-4 text-zinc-300" />
+            Volume
           </button>
-          <button className={chartIconActionClassName} type="button">
-            TV
+          <button
+            className={`${chartActionClassName} cursor-not-allowed text-zinc-500`}
+            disabled
+            type="button"
+          >
+            Compare
           </button>
         </div>
         <div className="flex flex-wrap items-center gap-1 rounded-md border border-[#2a2a2a] bg-[#050505] p-1">
-          {["24H", "7D", "1M", "3M", "YTD", "1Y", "Max"].map((item) => (
+          {chartRanges.map((item) => (
             <button
               className={
-                item === "7D"
+                item === selectedRange
                   ? "h-8 rounded-md bg-[#111111] px-3 text-sm font-semibold text-white hover:bg-[#1f1f1f]"
-                  : "h-8 cursor-not-allowed rounded-md px-3 text-sm font-semibold text-zinc-500"
+                  : "h-8 rounded-md px-3 text-sm font-semibold text-zinc-500 transition-colors hover:bg-[#111111] hover:text-zinc-200"
               }
-              disabled={item !== "7D"}
               key={item}
-              title={item === "7D" ? undefined : "Timeframe not available yet"}
+              onClick={() => {
+                setSelectedRange(item);
+              }}
               type="button"
             >
               {item}
@@ -225,10 +307,10 @@ export function MarketChart({ coin }: { coin: BagsCoinDetailData }) {
             <path d={areaPath} fill="url(#coin-chart-fill)" />
             {volumeBars.map((bar, index) => (
               <rect
-                fill="#2a2a2a"
+                fill="#27272a"
                 height={bar.height}
                 key={`${bar.x}-${index}`}
-                opacity="0.55"
+                opacity="0.7"
                 width={bar.width}
                 x={bar.x}
                 y={barBottom - bar.height}
@@ -265,13 +347,12 @@ export function MarketChart({ coin }: { coin: BagsCoinDetailData }) {
                       : "middle"
                 }
                 x={
-                  plotLeft +
-                  (pointIndex / Math.max(series.points.length - 1, 1)) *
-                    plotWidth
+                  xAxisLabels.find((item) => item.pointIndex === pointIndex)?.x
                 }
                 y={height - 14}
               >
-                {series.points[pointIndex]?.label}
+                {xAxisLabels.find((item) => item.pointIndex === pointIndex)
+                  ?.label ?? series.points[pointIndex]?.label}
               </text>
             ))}
           </svg>
@@ -284,7 +365,7 @@ export function MarketChart({ coin }: { coin: BagsCoinDetailData }) {
         </div>
       </div>
 
-      <section className="mt-5 grid overflow-hidden rounded-lg border border-[#1a1a1a] bg-[#1a1a1a] sm:grid-cols-4">
+      <section className="mt-5 grid overflow-hidden rounded-lg border border-[#1a1a1a] bg-[#1a1a1a] sm:grid-cols-2">
         {performance.map((item) => {
           const display = item.display ?? formatPercent(item.value);
           const negative =
@@ -403,39 +484,20 @@ export function MarketChart({ coin }: { coin: BagsCoinDetailData }) {
         <div className="border border-[#1a1a1a] bg-[#050505] p-5">
           <h2 className="flex items-center gap-2 font-semibold text-white">
             <Shield className="size-4 text-zinc-300" />
-            Market Pair
+            Token Details
           </h2>
           <div className="mt-4">
             <StatRow
-              label="Dex token"
-              value={
-                coin.market.dexTokenSymbol ?? coin.market.dexTokenName ?? "-"
-              }
-            />
-            <StatRow
-              label="Pair"
-              value={
-                dexPairUrl ? (
-                  <a
-                    className="hover:text-white"
-                    href={dexPairUrl}
-                    rel="noreferrer"
-                    target="_blank"
-                  >
-                    {shortenKey(coin.market.dexPairAddress)}
-                  </a>
-                ) : (
-                  "-"
-                )
-              }
-            />
-            <StatRow
               label="Liquidity"
-              value={formatMarketCap(coin.market.liquidityUsd)}
+              value={formatFullCurrency(coin.market.liquidityUsd)}
             />
             <StatRow
               label="24h volume"
-              value={formatMarketCap(coin.market.volume24h)}
+              value={formatFullCurrency(coin.market.volume24h)}
+            />
+            <StatRow
+              label="Fully diluted valuation"
+              value={formatFullCurrency(fullyDilutedValuation)}
             />
             <StatRow
               label="Token mint"
