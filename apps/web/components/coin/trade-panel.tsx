@@ -12,8 +12,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { VersionedTransaction } from "@solana/web3.js";
 
 import {
-  createBagsSwapTransaction,
-  fetchBagsTradeQuote,
+  createBagsSwapTransactionResult,
+  fetchBagsTradeQuoteResult,
   sendBagsSignedTransaction,
   type BagsCoinDetailData,
   type BagsTradeQuote,
@@ -91,6 +91,11 @@ const getQuoteOutputDecimals = (quote: BagsTradeQuote | null) => {
   return finalRoute?.outputMintDecimals ?? usdcDecimals;
 };
 
+const getDexScreenerUrl = (coin: BagsCoinDetailData) =>
+  `https://dexscreener.com/solana/${encodeURIComponent(
+    coin.market.dexPairAddress ?? coin.token.tokenMint,
+  )}`;
+
 export function TradePanel({ coin }: { coin: BagsCoinDetailData }) {
   const [tokenAmount, setTokenAmount] = useState(defaultAmount);
   const [usdcAmount, setUsdcAmount] = useState("0");
@@ -100,6 +105,7 @@ export function TradePanel({ coin }: { coin: BagsCoinDetailData }) {
   const [isSwapping, setIsSwapping] = useState(false);
   const [publicKey, setPublicKey] = useState<string | null>(null);
   const [quote, setQuote] = useState<BagsTradeQuote | null>(null);
+  const [quoteStatus, setQuoteStatus] = useState<number | null>(null);
   const [signature, setSignature] = useState<string | null>(null);
   const [tokenDecimals, setTokenDecimals] = useState(defaultTokenDecimals);
   const ticker = coin.token.symbol || coin.token.name || "Token";
@@ -133,6 +139,7 @@ export function TradePanel({ coin }: { coin: BagsCoinDetailData }) {
     async (side: QuoteSide = lastEditedSide ?? "token") => {
       setError(null);
       setSignature(null);
+      setQuoteStatus(null);
 
       const amount =
         side === "usdc"
@@ -142,23 +149,32 @@ export function TradePanel({ coin }: { coin: BagsCoinDetailData }) {
       if (!amount) {
         setQuote(null);
         setError(`Enter a valid ${side === "usdc" ? "USDC" : ticker} amount.`);
-        return null;
+        return {
+          quote: null,
+          status: null,
+        };
       }
 
       setIsQuoting(true);
 
       try {
-        const nextQuote = await fetchBagsTradeQuote({
+        const quoteResult = await fetchBagsTradeQuoteResult({
           amount,
           inputMint: side === "usdc" ? coin.quoteMint : coin.token.tokenMint,
           outputMint: side === "usdc" ? coin.token.tokenMint : coin.quoteMint,
           slippageMode: "auto",
         });
+        const nextQuote = quoteResult.response;
+
+        setQuoteStatus(quoteResult.status);
 
         if (!nextQuote) {
           setQuote(null);
           setError("Bags did not return a quote for this route.");
-          return null;
+          return {
+            quote: null,
+            status: quoteResult.status,
+          };
         }
 
         const inputTokenDecimals =
@@ -184,7 +200,10 @@ export function TradePanel({ coin }: { coin: BagsCoinDetailData }) {
         }
 
         setQuote(nextQuote);
-        return nextQuote;
+        return {
+          quote: nextQuote,
+          status: quoteResult.status,
+        };
       } finally {
         setIsQuoting(false);
       }
@@ -236,19 +255,33 @@ export function TradePanel({ coin }: { coin: BagsCoinDetailData }) {
         return;
       }
 
-      const activeQuote =
-        quote ?? (await requestQuote(lastEditedSide ?? "token"));
+      const activeQuoteResult = quote
+        ? {
+            quote,
+            status: quoteStatus,
+          }
+        : await requestQuote(lastEditedSide ?? "token");
+      const activeQuote = activeQuoteResult.quote;
 
       if (!activeQuote) {
+        if (activeQuoteResult.status === 429) {
+          window.location.assign(getDexScreenerUrl(coin));
+        }
+
         return;
       }
 
-      const swap = await createBagsSwapTransaction({
+      const swapResult = await createBagsSwapTransactionResult({
         quoteResponse: activeQuote,
         userPublicKey: walletPublicKey,
       });
+      const swap = swapResult.response;
 
       if (!swap) {
+        if (swapResult.status === 429) {
+          window.location.assign(getDexScreenerUrl(coin));
+        }
+
         setError("Bags could not create a swap transaction.");
         return;
       }
@@ -307,6 +340,7 @@ export function TradePanel({ coin }: { coin: BagsCoinDetailData }) {
               setTokenAmount(event.target.value);
               setLastEditedSide("token");
               setQuote(null);
+              setQuoteStatus(null);
               setSignature(null);
             }}
             placeholder="0"
@@ -325,6 +359,7 @@ export function TradePanel({ coin }: { coin: BagsCoinDetailData }) {
               setUsdcAmount(event.target.value);
               setLastEditedSide("usdc");
               setQuote(null);
+              setQuoteStatus(null);
               setSignature(null);
             }}
             placeholder="0"

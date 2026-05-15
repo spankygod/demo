@@ -228,6 +228,11 @@ type FetchBackendOptions = {
   tags?: string[];
 };
 
+type TradeApiResult<T> = {
+  response: T | null;
+  status: number | null;
+};
+
 export const getBackendBaseUrl = () =>
   (
     process.env.NEXT_PUBLIC_ASTRALMARKET_API_BASE_URL ??
@@ -278,6 +283,41 @@ const fetchBackend = async <T>(
   }
 };
 
+const fetchTradeBackend = async <T>(
+  path: string,
+  body: unknown,
+): Promise<TradeApiResult<T>> => {
+  try {
+    const response = await fetch(`${getBackendBaseUrl()}${path}`, {
+      body: JSON.stringify(body),
+      cache: "no-store",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      method: "POST",
+    });
+
+    if (!response.ok) {
+      return {
+        response: null,
+        status: response.status,
+      };
+    }
+
+    const payload = (await response.json()) as ApiEnvelope<T>;
+
+    return {
+      response: payload.success ? payload.response : null,
+      status: response.status,
+    };
+  } catch {
+    return {
+      response: null,
+      status: null,
+    };
+  }
+};
+
 export const fetchBagsCategory = () =>
   fetchBackend<BagsCategoryData>("/v1/bags/category", {
     revalidate: 300,
@@ -315,19 +355,30 @@ export const fetchBagsTradeQuote = (body: {
   slippageBps?: number;
   slippageMode?: "auto" | "manual";
 }) =>
-  fetchBackend<BagsTradeQuote>("/v1/bags/trade/quote", {
-    body,
-    method: "POST",
-  });
+  fetchTradeBackend<BagsTradeQuote>("/v1/bags/trade/quote", body).then(
+    (result) => result.response,
+  );
+
+export const fetchBagsTradeQuoteResult = (body: {
+  amount: number;
+  inputMint: string;
+  outputMint: string;
+  slippageBps?: number;
+  slippageMode?: "auto" | "manual";
+}) => fetchTradeBackend<BagsTradeQuote>("/v1/bags/trade/quote", body);
 
 export const createBagsSwapTransaction = (body: {
   quoteResponse: BagsTradeQuote;
   userPublicKey: string;
 }) =>
-  fetchBackend<BagsSwapTransaction>("/v1/bags/trade/swap", {
-    body,
-    method: "POST",
-  });
+  fetchTradeBackend<BagsSwapTransaction>("/v1/bags/trade/swap", body).then(
+    (result) => result.response,
+  );
+
+export const createBagsSwapTransactionResult = (body: {
+  quoteResponse: BagsTradeQuote;
+  userPublicKey: string;
+}) => fetchTradeBackend<BagsSwapTransaction>("/v1/bags/trade/swap", body);
 
 export const sendBagsSignedTransaction = (body: { transaction: string }) =>
   fetchBackend<string>("/v1/bags/trade/send", {
