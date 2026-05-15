@@ -145,6 +145,7 @@ export function TradePanel({ coin }: { coin: BagsCoinDetailData }) {
   const [signature, setSignature] = useState<string | null>(null);
   const [tokenDecimals, setTokenDecimals] = useState(defaultTokenDecimals);
   const ticker = coin.token.symbol || coin.token.name || "Token";
+  const dexScreenerPrice = getDexScreenerPrice(coin);
   const activeInputValue = lastEditedSide === "usdc" ? usdcAmount : tokenAmount;
   const activeBaseAmount = useMemo(() => {
     if (lastEditedSide === "usdc") {
@@ -447,40 +448,67 @@ export function TradePanel({ coin }: { coin: BagsCoinDetailData }) {
       <div className="mt-3 flex items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-1.5 text-xs text-zinc-500">
           <span>{isQuoting ? "Updating quote..." : "Slippage"}</span>
-          {quote ? (
-            <span className="group relative inline-flex">
-              <button
-                aria-label="Quote details"
-                className="inline-flex size-4 items-center justify-center rounded-full text-zinc-500 outline-none transition-colors hover:text-zinc-200 focus-visible:text-zinc-200"
-                type="button"
-              >
-                <CircleHelp className="size-3.5" />
-              </button>
-              <dl className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 w-52 -translate-x-1/2 rounded-md border border-[#252525] bg-[#080808] p-3 text-xs opacity-0 shadow-xl shadow-black/40 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
-                <div className="flex items-center justify-between gap-3">
-                  <dt className="text-zinc-500">Min received</dt>
-                  <dd className="font-mono text-zinc-200">
-                    {formatBaseUnits(
-                      quote.minOutAmount,
-                      getQuoteOutputDecimals(quote),
-                    )}
-                  </dd>
-                </div>
-                <div className="mt-2 flex items-center justify-between gap-3">
-                  <dt className="text-zinc-500">Price impact</dt>
-                  <dd className="font-mono text-zinc-200">
-                    {Number(quote.priceImpactPct).toFixed(3)}%
-                  </dd>
-                </div>
-                <div className="mt-2 flex items-center justify-between gap-3">
-                  <dt className="text-zinc-500">Slippage</dt>
-                  <dd className="font-mono text-zinc-200">
-                    {(quote.slippageBps / 100).toFixed(2)}%
-                  </dd>
-                </div>
-              </dl>
-            </span>
-          ) : null}
+          <span className="group relative inline-flex">
+            <button
+              aria-label="Quote details"
+              className="inline-flex size-4 items-center justify-center rounded-full text-zinc-500 outline-none transition-colors hover:text-zinc-200 focus-visible:text-zinc-200"
+              type="button"
+            >
+              <CircleHelp className="size-3.5" />
+            </button>
+            <dl className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 w-56 -translate-x-1/2 rounded-md border border-[#252525] bg-[#080808] p-3 text-xs opacity-0 shadow-xl shadow-black/40 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+              {quote ? (
+                <>
+                  <div className="flex items-center justify-between gap-3">
+                    <dt className="text-zinc-500">Source</dt>
+                    <dd className="font-mono text-zinc-200">Bags</dd>
+                  </div>
+                  <div className="flex items-center justify-between gap-3">
+                    <dt className="text-zinc-500">Min received</dt>
+                    <dd className="font-mono text-zinc-200">
+                      {formatBaseUnits(
+                        quote.minOutAmount,
+                        getQuoteOutputDecimals(quote),
+                      )}
+                    </dd>
+                  </div>
+                  <div className="mt-2 flex items-center justify-between gap-3">
+                    <dt className="text-zinc-500">Price impact</dt>
+                    <dd className="font-mono text-zinc-200">
+                      {Number(quote.priceImpactPct).toFixed(3)}%
+                    </dd>
+                  </div>
+                  <div className="mt-2 flex items-center justify-between gap-3">
+                    <dt className="text-zinc-500">Slippage</dt>
+                    <dd className="font-mono text-zinc-200">
+                      {(quote.slippageBps / 100).toFixed(2)}%
+                    </dd>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="flex items-center justify-between gap-3">
+                    <dt className="text-zinc-500">Source</dt>
+                    <dd className="font-mono text-zinc-200">DexScreener</dd>
+                  </div>
+                  <div className="mt-2 flex items-center justify-between gap-3">
+                    <dt className="text-zinc-500">Slippage</dt>
+                    <dd className="font-mono text-zinc-200">Auto</dd>
+                  </div>
+                  <div className="mt-2 flex items-center justify-between gap-3">
+                    <dt className="text-zinc-500">Price</dt>
+                    <dd className="font-mono text-zinc-200">
+                      {dexScreenerPrice === null
+                        ? "-"
+                        : `$${dexScreenerPrice.toLocaleString(undefined, {
+                            maximumFractionDigits: 9,
+                          })}`}
+                    </dd>
+                  </div>
+                </>
+              )}
+            </dl>
+          </span>
         </div>
         <button
           className="inline-flex h-9 items-center justify-center gap-2 rounded-md bg-green-400 px-3 text-sm font-bold text-black transition-colors hover:bg-green-300 disabled:cursor-not-allowed disabled:opacity-60"
