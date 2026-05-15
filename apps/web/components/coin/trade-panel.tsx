@@ -41,6 +41,10 @@ const usdcDecimals = 6;
 const defaultTokenDecimals = 6;
 const defaultAmount = "1";
 type QuoteSide = "token" | "usdc";
+type BagsQuoteResult = {
+  quote: BagsTradeQuote | null;
+  status: number | null;
+};
 
 const parseDecimalAmount = (value: string, decimals: number) => {
   const normalized = value.trim();
@@ -85,6 +89,24 @@ const formatBaseUnits = (
   return trimmedFraction ? `${wholeText}.${trimmedFraction}` : wholeText;
 };
 
+const parseDisplayAmount = (value: string) => {
+  const normalized = value.trim();
+
+  if (!/^\d+(\.\d+)?$/u.test(normalized)) {
+    return null;
+  }
+
+  const parsed = Number(normalized);
+
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+};
+
+const formatTradeAmount = (value: number) =>
+  value.toLocaleString(undefined, {
+    maximumFractionDigits: 9,
+    useGrouping: false,
+  });
+
 const getQuoteOutputDecimals = (quote: BagsTradeQuote | null) => {
   const finalRoute = quote?.routePlan.at(-1);
 
@@ -95,6 +117,17 @@ const getDexScreenerUrl = (coin: BagsCoinDetailData) =>
   `https://dexscreener.com/solana/${encodeURIComponent(
     coin.market.dexPairAddress ?? coin.token.tokenMint,
   )}`;
+
+const getDexScreenerPrice = (coin: BagsCoinDetailData) => {
+  const price = coin.market.price;
+
+  return price !== null &&
+    price !== undefined &&
+    Number.isFinite(price) &&
+    price > 0
+    ? price
+    : null;
+};
 
 export function TradePanel({ coin }: { coin: BagsCoinDetailData }) {
   const [tokenAmount, setTokenAmount] = useState(defaultAmount);
@@ -135,8 +168,44 @@ export function TradePanel({ coin }: { coin: BagsCoinDetailData }) {
     return nextPublicKey;
   };
 
-  const requestQuote = useCallback(
-    async (side: QuoteSide = lastEditedSide ?? "token") => {
+  const applyDexScreenerQuote = useCallback(
+    (side: QuoteSide) => {
+      const price = getDexScreenerPrice(coin);
+
+      if (!price) {
+        return false;
+      }
+
+      const amount =
+        side === "usdc"
+          ? parseDisplayAmount(usdcAmount)
+          : parseDisplayAmount(tokenAmount);
+
+      if (!amount) {
+        setQuote(null);
+        return false;
+      }
+
+      setError(null);
+      setSignature(null);
+      setQuote(null);
+      setQuoteStatus(null);
+
+      if (side === "usdc") {
+        setTokenAmount(formatTradeAmount(amount / price));
+      } else {
+        setUsdcAmount(formatTradeAmount(amount * price));
+      }
+
+      return true;
+    },
+    [coin, tokenAmount, usdcAmount],
+  );
+
+  const requestBagsQuote = useCallback(
+    async (
+      side: QuoteSide = lastEditedSide ?? "token",
+    ): Promise<BagsQuoteResult> => {
       setError(null);
       setSignature(null);
       setQuoteStatus(null);
@@ -225,7 +294,9 @@ export function TradePanel({ coin }: { coin: BagsCoinDetailData }) {
     }
 
     const timeoutId = window.setTimeout(() => {
-      void requestQuote(lastEditedSide);
+      if (!applyDexScreenerQuote(lastEditedSide)) {
+        void requestBagsQuote(lastEditedSide);
+      }
     }, 450);
 
     return () => {
@@ -260,7 +331,7 @@ export function TradePanel({ coin }: { coin: BagsCoinDetailData }) {
             quote,
             status: quoteStatus,
           }
-        : await requestQuote(lastEditedSide ?? "token");
+        : await requestBagsQuote(lastEditedSide ?? "token");
       const activeQuote = activeQuoteResult.quote;
 
       if (!activeQuote) {
