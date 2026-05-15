@@ -38,7 +38,7 @@ declare global {
 }
 
 const usdcDecimals = 6;
-const defaultTokenDecimals = 6;
+const defaultTokenDecimals = 9;
 const defaultAmount = "1";
 type QuoteSide = "token" | "usdc";
 type BagsQuoteResult = {
@@ -129,8 +129,7 @@ const getDexScreenerPrice = (coin: BagsCoinDetailData) => {
     : null;
 };
 
-const shouldFallbackToDexScreener = (status: number | null) =>
-  status !== null && status >= 400;
+const isRateLimited = (status: number | null) => status === 429;
 
 export function TradePanel({ coin }: { coin: BagsCoinDetailData }) {
   const [tokenAmount, setTokenAmount] = useState(defaultAmount);
@@ -339,10 +338,6 @@ export function TradePanel({ coin }: { coin: BagsCoinDetailData }) {
       const activeQuote = activeQuoteResult.quote;
 
       if (!activeQuote) {
-        if (shouldFallbackToDexScreener(activeQuoteResult.status)) {
-          window.location.assign(getDexScreenerUrl(coin));
-        }
-
         return;
       }
 
@@ -353,7 +348,7 @@ export function TradePanel({ coin }: { coin: BagsCoinDetailData }) {
       const swap = swapResult.response;
 
       if (!swap) {
-        if (shouldFallbackToDexScreener(swapResult.status)) {
+        if (isRateLimited(swapResult.status)) {
           window.location.assign(getDexScreenerUrl(coin));
         }
 
